@@ -6,41 +6,33 @@ from flask_cors import CORS
 app = Flask(__name__, static_folder='.', static_url_path='')
 CORS(app)
 
-# 从环境变量读取 API Keys（Render 设定环境变量）
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
 DEEPL_API_KEY = os.environ.get("DEEPL_API_KEY", "")
 
-# 语言设定映射（与前端一致）
 LANG_CONFIG = {
-    "zh-TW": {"googleCode": "zh-TW", "deeplCode": "ZH-HANT", "geminiName": "繁體中文"},
-    "zh-CN": {"googleCode": "zh-CN", "deeplCode": "ZH", "geminiName": "簡體中文"},
-    "en": {"googleCode": "en", "deeplCode": "EN", "geminiName": "英文"},
-    "ja": {"googleCode": "ja", "deeplCode": "JA", "geminiName": "日文"},
-    "ko": {"googleCode": "ko", "deeplCode": "KO", "geminiName": "韓文"},
-    "fr": {"googleCode": "fr", "deeplCode": "FR", "geminiName": "法文"},
-    "de": {"googleCode": "de", "deeplCode": "DE", "geminiName": "德文"}
+    "zh-TW": {"google": "zh-TW", "deepl": "ZH-HANT", "name": "繁體中文"},
+    "zh-CN": {"google": "zh-CN", "deepl": "ZH", "name": "簡體中文"},
+    "en": {"google": "en", "deepl": "EN", "name": "英文"},
+    "ja": {"google": "ja", "deepl": "JA", "name": "日文"},
+    "ko": {"google": "ko", "deepl": "KO", "name": "韓文"},
+    "fr": {"google": "fr", "deepl": "FR", "name": "法文"},
+    "de": {"google": "de", "deepl": "DE", "name": "德文"}
 }
 
-# ---------- 翻译引擎 ----------
-def translate_with_google(text, src_lang, tgt_lang):
-    """公共 Google 翻译 API (免费，无需 key)"""
-    src = LANG_CONFIG.get(src_lang, {}).get("googleCode", "auto")
-    tgt = LANG_CONFIG.get(tgt_lang, {}).get("googleCode", "en")
-    url = f"https://translate.googleapis.com/translate_a/single?client=gtx&sl={src}&tl={tgt}&dt=t&q={requests.utils.quote(text)}"
+def translate_google(text, src, tgt):
+    src_code = LANG_CONFIG.get(src, {}).get("google", "auto")
+    tgt_code = LANG_CONFIG.get(tgt, {}).get("google", "en")
+    url = f"https://translate.googleapis.com/translate_a/single?client=gtx&sl={src_code}&tl={tgt_code}&dt=t&q={requests.utils.quote(text)}"
     resp = requests.get(url, timeout=10)
     resp.raise_for_status()
     data = resp.json()
-    translated = "".join(part[0] for part in data[0] if part[0])
-    return translated or text
+    return "".join(part[0] for part in data[0] if part[0]) or text
 
-def translate_with_deepl(text, src_lang, tgt_lang, api_key):
-    """DeepL 翻译（需要有效 key）"""
+def translate_deepl(text, src, tgt, api_key):
     if not api_key:
         raise ValueError("DeepL API Key 未設定")
-    tgt_code = LANG_CONFIG.get(tgt_lang, {}).get("deeplCode")
-    if not tgt_code:
-        raise ValueError(f"不支援 DeepL 目標語言: {tgt_lang}")
-    src_code = LANG_CONFIG.get(src_lang, {}).get("deeplCode")
+    tgt_code = LANG_CONFIG[tgt]["deepl"]
+    src_code = LANG_CONFIG[src]["deepl"]
     if src_code == "ZH-HANT":
         src_code = "ZH"
     params = {"text": text, "target_lang": tgt_code}
@@ -49,29 +41,22 @@ def translate_with_deepl(text, src_lang, tgt_lang, api_key):
     headers = {"Authorization": f"DeepL-Auth-Key {api_key}"}
     resp = requests.post("https://api-free.deepl.com/v2/translate", data=params, headers=headers, timeout=15)
     resp.raise_for_status()
-    result = resp.json()
-    return result["translations"][0]["text"]
+    return resp.json()["translations"][0]["text"]
 
-def translate_with_gemini(text, src_lang, tgt_lang, api_key):
-    """Gemini AI 翻译（优先引擎）"""
+def translate_gemini(text, src, tgt, api_key):
     if not api_key:
         raise ValueError("Gemini API Key 未設定")
-    src_name = LANG_CONFIG.get(src_lang, {}).get("geminiName", src_lang)
-    tgt_name = LANG_CONFIG.get(tgt_lang, {}).get("geminiName", tgt_lang)
+    src_name = LANG_CONFIG[src]["name"]
+    tgt_name = LANG_CONFIG[tgt]["name"]
     prompt = f"請將以下{src_name}內容翻譯成{tgt_name}，只輸出翻譯結果，不要附加任何說明。\n原文: {text}"
     url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key={api_key}"
-    payload = {
-        "contents": [{"parts": [{"text": prompt}]}],
-        "generationConfig": {"temperature": 0.2}
-    }
+    payload = {"contents": [{"parts": [{"text": prompt}]}], "generationConfig": {"temperature": 0.2}}
     resp = requests.post(url, json=payload, timeout=20)
     if resp.status_code == 429:
         raise Exception("QUOTA_EXCEEDED")
     resp.raise_for_status()
-    data = resp.json()
-    return data["candidates"][0]["content"]["parts"][0]["text"].strip()
+    return resp.json()["candidates"][0]["content"]["parts"][0]["text"].strip()
 
-# ---------- 智能调度路由 ----------
 @app.route("/translate", methods=["POST"])
 def translate():
     data = request.get_json()
@@ -83,53 +68,44 @@ def translate():
     if src == tgt:
         return jsonify({"result": text, "engine": "相同語言"})
 
-    # 1. 尝试 Gemini
-    gemini_success = False
-    final_result = ""
-    used_engine = ""
+    # 優先 Gemini
     if GEMINI_API_KEY:
         try:
-            final_result = translate_with_gemini(text, src, tgt, GEMINI_API_KEY)
-            used_engine = "Gemini AI"
-            gemini_success = True
+            res = translate_gemini(text, src, tgt, GEMINI_API_KEY)
+            return jsonify({"result": res, "engine": "Gemini AI"})
         except Exception as e:
             print(f"Gemini 失敗: {e}")
-            # 继续降级
 
-    # 2. 降级后备
-    if not gemini_success:
-        try:
-            is_western = tgt in ["en", "fr", "de"]
-            is_east_asian = tgt in ["ja", "ko"]
-            if is_western:
-                final_result = translate_with_google(text, src, tgt)
-                used_engine = "Google 翻譯 (英法德)"
-            elif is_east_asian:
-                # 优先 DeepL（若有 Key），否则直接用 Google
-                if DEEPL_API_KEY:
-                    try:
-                        final_result = translate_with_deepl(text, src, tgt, DEEPL_API_KEY)
-                        used_engine = "DeepL 翻譯 (日韓)"
-                    except Exception as e:
-                        print(f"DeepL 失敗，降級 Google: {e}")
-                        final_result = translate_with_google(text, src, tgt)
-                        used_engine = "Google 翻譯 (DeepL降級)"
-                else:
-                    final_result = translate_with_google(text, src, tgt)
-                    used_engine = "Google 翻譯 (日韓無DeepL)"
+    # 降級
+    try:
+        if tgt in ["en", "fr", "de"]:
+            res = translate_google(text, src, tgt)
+            engine = "Google 翻譯 (英法德)"
+        elif tgt in ["ja", "ko"]:
+            if DEEPL_API_KEY:
+                try:
+                    res = translate_deepl(text, src, tgt, DEEPL_API_KEY)
+                    engine = "DeepL 翻譯"
+                except:
+                    res = translate_google(text, src, tgt)
+                    engine = "Google 翻譯 (DeepL降級)"
             else:
-                # 中文或其它一律 Google
-                final_result = translate_with_google(text, src, tgt)
-                used_engine = "Google 翻譯"
-        except Exception as e:
-            return jsonify({"error": f"翻譯失敗: {str(e)}"}), 500
+                res = translate_google(text, src, tgt)
+                engine = "Google 翻譯 (日韓無DeepL)"
+        else:
+            res = translate_google(text, src, tgt)
+            engine = "Google 翻譯"
+        return jsonify({"result": res, "engine": engine})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
-    return jsonify({"result": final_result, "engine": used_engine})
-
-# 提供前端 index.html
 @app.route("/")
 def index():
     return send_from_directory('.', 'index.html')
+
+if __name__ == "__main__":
+    port = int(os.environ.get("PORT", 5000))
+    app.run(host="0.0.0.0", port=port)
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
