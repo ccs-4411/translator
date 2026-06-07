@@ -1,9 +1,10 @@
+<!-- index.html -->
 <!DOCTYPE html>
 <html lang="zh-TW">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-    <title>智能翻译 | 安全后端版</title>
+    <title>智慧翻譯 | 安全後端版</title>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body { background: #f5f7fb; font-family: system-ui, sans-serif; padding: 0; }
@@ -31,34 +32,34 @@
 </head>
 <body>
 <div class="container">
-    <h1>🌍 多引擎翻译 (后端代理)</h1>
+    <h1>🌍 多引擎翻譯 (後端代理)</h1>
     <div class="translate-card">
         <div class="box-header">
             <select id="sourceLang"></select>
-            <div><button id="pasteBtn">📋 贴入</button><button id="clearSourceBtn" class="danger">🗑️ 清除</button></div>
+            <div><button id="pasteBtn">📋 貼入</button><button id="clearSourceBtn" class="danger">🗑️ 清除</button></div>
         </div>
-        <textarea id="sourceText" placeholder="输入要翻译的文字..."></textarea>
+        <textarea id="sourceText" placeholder="輸入要翻譯的文字..."></textarea>
     </div>
     <div class="translate-card">
         <div class="box-header">
             <select id="targetLang"></select>
-            <div><button id="copyBtn">📋 复制</button><button id="clearTargetBtn" class="danger">🗑️ 清除</button></div>
+            <div><button id="copyBtn">📋 複製</button><button id="clearTargetBtn" class="danger">🗑️ 清除</button></div>
         </div>
-        <textarea id="targetText" placeholder="翻译结果..." readonly></textarea>
+        <textarea id="targetText" placeholder="翻譯結果..." readonly></textarea>
     </div>
     <div class="translate-bar">
-        <button id="translateBtn" class="btn-translate">✨ 开始翻译</button>
+        <button id="translateBtn" class="btn-translate">✨ 開始翻譯</button>
     </div>
-    <div id="messageBox" class="message">✅ 就绪 | 引擎: Gemini → 英法德:Google / 日韩:DeepL(有Key) → Google降级</div>
-    <footer>API Key 存放于服务器环境变量，前端不暴露</footer>
+    <div id="messageBox" class="message">✅ 就緒 | 引擎: Gemini → 英法德:Google / 日韓:DeepL(有Key) → Google降級</div>
+    <footer>API Key 存放於伺服器環境變數，前端不暴露</footer>
 </div>
 
 <script>
-    // 语言配置
+    // 語言設定
     const LANG_LIST = [
-        { code: "zh-TW", name: "繁體中文" }, { code: "zh-CN", name: "简体中文" },
+        { code: "zh-TW", name: "繁體中文" }, { code: "zh-CN", name: "簡體中文" },
         { code: "en", name: "英文" }, { code: "ja", name: "日文" },
-        { code: "ko", name: "韩文" }, { code: "fr", name: "法文" }, { code: "de", name: "德文" }
+        { code: "ko", name: "韓文" }, { code: "fr", name: "法文" }, { code: "de", name: "德文" }
     ];
     function populateSelects() {
         const sourceSel = document.getElementById('sourceLang');
@@ -89,16 +90,16 @@
 
     async function translate() {
         const text = sourceText.value.trim();
-        if (!text) { setMessage("❌ 请输入要翻译的文字", true); return; }
+        if (!text) { setMessage("❌ 請輸入要翻譯的文字", true); return; }
         const src = sourceLang.value;
         const tgt = targetLang.value;
         if (src === tgt) {
             targetText.value = text;
-            setMessage("✅ 源语言和目标语言相同，已复制原文");
+            setMessage("✅ 來源語言和目標語言相同，已複製原文");
             return;
         }
-        targetText.value = "⏳ 翻译中...";
-        setMessage("🔄 正在调用后端翻译...");
+        targetText.value = "⏳ 翻譯中...";
+        setMessage("🔄 正在呼叫後端翻譯...");
         try {
             const response = await fetch("/translate", {
                 method: "POST",
@@ -106,12 +107,12 @@
                 body: JSON.stringify({ text, source_lang: src, target_lang: tgt })
             });
             const data = await response.json();
-            if (!response.ok) throw new Error(data.error || "翻译失败");
+            if (!response.ok) throw new Error(data.error || "翻譯失敗");
             targetText.value = data.result;
-            setMessage(`✅ 翻译完成 (引擎: ${data.engine})`);
+            setMessage(`✅ 翻譯完成 (引擎: ${data.engine})`);
         } catch (err) {
-            targetText.value = "❌ 翻译出错";
-            setMessage(`❌ 错误: ${err.message}`, true);
+            targetText.value = "❌ 翻譯出錯";
+            setMessage(`❌ 錯誤: ${err.message}`, true);
         }
     }
 
@@ -119,16 +120,16 @@
         try {
             const text = await navigator.clipboard.readText();
             sourceText.value = text;
-            setMessage("📋 已粘贴文字");
-        } catch { setMessage("无法读取剪贴板", true); }
+            setMessage("📋 已貼上文字");
+        } catch { setMessage("無法讀取剪貼簿", true); }
     }
     function clearSource() { sourceText.value = ""; setMessage("原文已清除"); }
     async function copyResult() {
-        if (!targetText.value) { setMessage("没有翻译结果可复制", true); return; }
+        if (!targetText.value) { setMessage("沒有翻譯結果可複製", true); return; }
         await navigator.clipboard.writeText(targetText.value);
-        setMessage("📋 翻译结果已复制");
+        setMessage("📋 翻譯結果已複製");
     }
-    function clearTarget() { targetText.value = ""; setMessage("翻译结果已清除"); }
+    function clearTarget() { targetText.value = ""; setMessage("翻譯結果已清除"); }
 
     translateBtn.addEventListener('click', translate);
     pasteBtn.addEventListener('click', pasteFromClipboard);
