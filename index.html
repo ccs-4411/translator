@@ -47,7 +47,7 @@
         </div>
         <div class="accordion-content">
             <div style="margin-bottom: 20px;">
-                <label>✨ Google Gemini API Key (2.5 Flash)</label>
+                <label>✨ Google Gemini API Key (2.5 Flash / 1.5 Flash)</label>
                 <div class="api-group">
                     <div class="input-flex"><input type="password" id="geminiKey" placeholder="輸入 Gemini Key"></div>
                     <button id="saveGemini" class="primary">💾 儲存</button>
@@ -84,8 +84,8 @@
         <textarea id="targetText" placeholder="翻譯結果..." readonly></textarea>
     </div>
     <div class="translate-bar"><button id="translateBtn" class="btn-translate">✨ 開始翻譯</button></div>
-    <div id="messageBox" class="message">✅ 就緒 | 引擎: Gemini 2.5 Flash → 英法德:Google / 日韓:DeepL(有Key) → Google降級</div>
-    <footer>金鑰僅儲存於瀏覽器，後端代理不記錄</footer>
+    <div id="messageBox" class="message">✅ 就緒 | 引擎: Gemini 優先 → 英法德:Google / 日韓:DeepL(有Key) → Google降級</div>
+    <footer>金鑰僅儲存於瀏覽器，並加密傳送至後端（後端不記錄）</footer>
 </div>
 
 <script>
@@ -103,15 +103,17 @@
     }
     populateSelects();
 
-    // 儲存金鑰 (localStorage)
+    // 儲存/讀取金鑰 (localStorage)
     const geminiInput = document.getElementById('geminiKey');
     const deeplInput = document.getElementById('deeplKey');
     const geminiStatus = document.getElementById('geminiStatus');
     const deeplStatus = document.getElementById('deeplStatus');
 
     function loadKeys() {
-        if (localStorage.getItem('gemini_key')) { geminiInput.value = localStorage.getItem('gemini_key'); geminiStatus.innerText = '✅ 已載入'; }
-        if (localStorage.getItem('deepl_key')) { deeplInput.value = localStorage.getItem('deepl_key'); deeplStatus.innerText = '✅ 已載入'; }
+        const g = localStorage.getItem('gemini_key');
+        const d = localStorage.getItem('deepl_key');
+        if (g) { geminiInput.value = g; geminiStatus.innerText = '✅ 已載入'; }
+        if (d) { deeplInput.value = d; deeplStatus.innerText = '✅ 已載入'; }
     }
     document.getElementById('saveGemini').onclick = () => { let k = geminiInput.value.trim(); if(k){ localStorage.setItem('gemini_key', k); geminiStatus.innerText = '✅ 已儲存'; } };
     document.getElementById('clearGemini').onclick = () => { localStorage.removeItem('gemini_key'); geminiInput.value = ''; geminiStatus.innerText = '🧹 已清除'; };
@@ -134,10 +136,19 @@
         targetText.value = '⏳ 翻譯中...';
         setMsg('🔄 呼叫後端...');
         try {
+            // 从 localStorage 获取密钥，并发送到后端
+            const gemini_key = localStorage.getItem('gemini_key') || '';
+            const deepl_key = localStorage.getItem('deepl_key') || '';
             const res = await fetch('/translate', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ text, source_lang: src, target_lang: tgt })
+                body: JSON.stringify({ 
+                    text, 
+                    source_lang: src, 
+                    target_lang: tgt,
+                    gemini_key: gemini_key,
+                    deepl_key: deepl_key
+                })
             });
             const data = await res.json();
             if(!res.ok) throw new Error(data.error || '失敗');
