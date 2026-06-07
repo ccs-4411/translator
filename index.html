@@ -16,19 +16,21 @@
         .accordion-content { padding: 16px; }
         .api-group { display: flex; flex-wrap: wrap; gap: 10px; align-items: flex-end; }
         .input-flex { flex: 2; min-width: 160px; }
-        button { background: #eef2f8; border: 1px solid #dce3ec; padding: 8px 14px; border-radius: 40px; cursor: pointer; }
+        button { background: #eef2f8; border: 1px solid #dce3ec; padding: 8px 14px; border-radius: 40px; cursor: pointer; font-size: 0.8rem; }
         button.primary { background: #2c3e66; color: white; border: none; }
         button.danger { background: #fff0f0; border-color: #ffcdcd; color: #b13e3e; }
-        input { width: 100%; padding: 10px 14px; border-radius: 30px; border: 1px solid #cfdde6; }
+        input { width: 100%; padding: 10px 14px; border-radius: 30px; border: 1px solid #cfdde6; font-size: 0.9rem; }
+        label { font-size: 0.7rem; font-weight: 600; color: #4b5565; margin-bottom: 4px; display: block; }
         .translate-card { background: white; border-radius: 24px; padding: 16px; margin-bottom: 16px; }
         .box-header { display: flex; justify-content: space-between; margin-bottom: 12px; flex-wrap: wrap; gap: 8px; }
-        select { flex: 2; padding: 10px; border-radius: 40px; border: 1px solid #cfdde6; }
-        textarea { width: 100%; padding: 14px; border-radius: 20px; border: 1px solid #e2e8f0; min-height: 160px; }
+        select { flex: 2; padding: 10px; border-radius: 40px; border: 1px solid #cfdde6; background: white; font-size: 0.9rem; }
+        textarea { width: 100%; padding: 14px; border-radius: 20px; border: 1px solid #e2e8f0; font-size: 1rem; min-height: 160px; resize: vertical; }
         .translate-bar { text-align: center; margin: 8px 0 16px; }
-        .btn-translate { background: #2c3e66; color: white; padding: 12px 24px; border-radius: 60px; width: 80%; max-width: 260px; border: none; font-weight: 600; }
-        .message { background: #eef2fa; border-radius: 20px; padding: 10px 16px; margin-top: 12px; border-left: 4px solid #5f7f9e; }
+        .btn-translate { background: #2c3e66; color: white; padding: 12px 24px; border-radius: 60px; width: 80%; max-width: 260px; border: none; font-weight: 600; font-size: 1rem; }
+        .message { background: #eef2fa; border-radius: 20px; padding: 10px 16px; margin-top: 12px; border-left: 4px solid #5f7f9e; font-size: 0.8rem; }
         .error { background: #ffefef; border-left-color: #d9534f; color: #a94442; }
         footer { text-align: center; font-size: 0.7rem; color: #6c7a8e; margin-top: 24px; }
+        hr { margin: 12px 0; border-color: #eef2f6; }
         @media (max-width: 640px) {
             .container { padding: 12px; }
             .box-header { flex-direction: column; align-items: stretch; }
@@ -40,16 +42,16 @@
 <div class="container">
     <div class="accordion" id="keyAccordion">
         <div class="accordion-header" id="accordionToggle">
-            <span>🔑 API 金鑰設定 (Gemini + DeepL)</span>
+            <span>🔑 API 金鑰設定 (Gemini + DeepL 選用)</span>
             <span class="arrow">▼</span>
         </div>
         <div class="accordion-content">
             <div style="margin-bottom: 20px;">
-                <label>✨ Gemini API Key</label>
+                <label>✨ Google Gemini API Key (2.5 Flash)</label>
                 <div class="api-group">
                     <div class="input-flex"><input type="password" id="geminiKey" placeholder="輸入 Gemini Key"></div>
-                    <button id="saveGemini" class="primary">儲存</button>
-                    <button id="clearGemini" class="danger">清除</button>
+                    <button id="saveGemini" class="primary">💾 儲存</button>
+                    <button id="clearGemini" class="danger">🗑️ 清除</button>
                 </div>
                 <div id="geminiStatus" style="font-size:0.7rem; margin-top:6px;"></div>
             </div>
@@ -58,11 +60,12 @@
                 <label>🌐 DeepL API Key (選填，日韓優先)</label>
                 <div class="api-group">
                     <div class="input-flex"><input type="password" id="deeplKey" placeholder="輸入 DeepL Key"></div>
-                    <button id="saveDeepl" class="primary">儲存</button>
-                    <button id="clearDeepl" class="danger">清除</button>
+                    <button id="saveDeepl" class="primary">💾 儲存</button>
+                    <button id="clearDeepl" class="danger">🗑️ 清除</button>
                 </div>
                 <div id="deeplStatus" style="font-size:0.7rem; margin-top:6px;"></div>
             </div>
+            <div class="message" style="margin-top: 12px; background:#eef2fa;">💡 策略：Gemini優先 → 英法德用Google；日韓有DeepL Key優先，無或失敗自動Google</div>
         </div>
     </div>
 
@@ -81,9 +84,10 @@
         <textarea id="targetText" placeholder="翻譯結果..." readonly></textarea>
     </div>
     <div class="translate-bar"><button id="translateBtn" class="btn-translate">✨ 開始翻譯</button></div>
-    <div id="messageBox" class="message">✅ 就緒 | 引擎: Gemini → 英法德:Google / 日韓:DeepL(有Key) → Google降級</div>
-    <footer>金鑰僅儲存於瀏覽器，後端不記錄</footer>
+    <div id="messageBox" class="message">✅ 就緒 | 引擎: Gemini 2.5 Flash → 英法德:Google / 日韓:DeepL(有Key) → Google降級</div>
+    <footer>金鑰僅儲存於瀏覽器，後端代理不記錄</footer>
 </div>
+
 <script>
     const LANG_LIST = [
         { code: "zh-TW", name: "繁體中文" }, { code: "zh-CN", name: "簡體中文" },
@@ -99,11 +103,12 @@
     }
     populateSelects();
 
-    // 儲存金鑰
+    // 儲存金鑰 (localStorage)
     const geminiInput = document.getElementById('geminiKey');
     const deeplInput = document.getElementById('deeplKey');
     const geminiStatus = document.getElementById('geminiStatus');
     const deeplStatus = document.getElementById('deeplStatus');
+
     function loadKeys() {
         if (localStorage.getItem('gemini_key')) { geminiInput.value = localStorage.getItem('gemini_key'); geminiStatus.innerText = '✅ 已載入'; }
         if (localStorage.getItem('deepl_key')) { deeplInput.value = localStorage.getItem('deepl_key'); deeplStatus.innerText = '✅ 已載入'; }
