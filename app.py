@@ -49,13 +49,31 @@ def translate_gemini(text, src, tgt, api_key):
     src_name = LANG_CONFIG[src]["name"]
     tgt_name = LANG_CONFIG[tgt]["name"]
     prompt = f"請將以下{src_name}內容翻譯成{tgt_name}，只輸出翻譯結果，不要附加任何說明。\n原文: {text}"
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key={api_key}"
-    payload = {"contents": [{"parts": [{"text": prompt}]}], "generationConfig": {"temperature": 0.2}}
-    resp = requests.post(url, json=payload, timeout=20)
-    if resp.status_code == 429:
-        raise Exception("QUOTA_EXCEEDED")
-    resp.raise_for_status()
-    return resp.json()["candidates"][0]["content"]["parts"][0]["text"].strip()
+    
+    # 使用 Gemini 2.0 Flash 模型（您提供的 Key 對應此模型）
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={api_key}"
+    
+    payload = {
+        "contents": [{"parts": [{"text": prompt}]}],
+        "generationConfig": {"temperature": 0.2, "maxOutputTokens": 2000}
+    }
+    try:
+        resp = requests.post(url, json=payload, timeout=30)
+        print(f"[Gemini] Status: {resp.status_code}")
+        if resp.status_code == 429:
+            raise Exception("QUOTA_EXCEEDED")
+        if resp.status_code != 200:
+            error_text = resp.text[:300]
+            print(f"[Gemini] 錯誤回應: {error_text}")
+            raise Exception(f"API 錯誤 {resp.status_code}: {error_text}")
+        data = resp.json()
+        # 解析結果
+        result = data.get("candidates", [{}])[0].get("content", {}).get("parts", [{}])[0].get("text")
+        if not result:
+            raise Exception("回應中無翻譯結果")
+        return result.strip()
+    except requests.exceptions.RequestException as e:
+        raise Exception(f"請求失敗: {str(e)}")
 
 @app.route("/translate", methods=["POST"])
 def translate():
@@ -72,9 +90,10 @@ def translate():
     if GEMINI_API_KEY:
         try:
             res = translate_gemini(text, src, tgt, GEMINI_API_KEY)
-            return jsonify({"result": res, "engine": "Gemini AI"})
+            return jsonify({"result": res, "engine": "Gemini AI (2.0 Flash)"})
         except Exception as e:
             print(f"Gemini 失敗: {e}")
+            # 繼續降級
 
     # 降級
     try:
@@ -106,6 +125,3 @@ def index():
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port)
-
-if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
