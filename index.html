@@ -74,7 +74,13 @@
     <div class="translate-card">
         <div class="box-header">
             <select id="sourceLang"></select>
-            <div><button id="pasteBtn">📋 貼上</button><button id="clearSource" class="danger">清除</button></div>
+            <div>
+                <button id="pasteBtn">📋 貼上</button>
+                <button id="fileBtn">📂 開啟檔案</button>
+                <button id="clearSource" class="danger">清除</button>
+                <!-- 隱藏的上傳元件 -->
+                <input type="file" id="fileInput" accept=".txt,.md,.csv" style="display: none;" />
+            </div>
         </div>
         <textarea id="sourceText" placeholder="輸入要翻譯的文字..."></textarea>
     </div>
@@ -138,7 +144,6 @@
         targetText.value = '⏳ 翻譯中...';
         setMsg('🔄 呼叫後端...');
         try {
-            // 从 localStorage 获取密钥，并发送到后端
             const gemini_key = localStorage.getItem('gemini_key') || '';
             const deepl_key = localStorage.getItem('deepl_key') || '';
             const res = await fetch('/translate', {
@@ -158,10 +163,47 @@
             setMsg(`✅ 完成 (引擎: ${data.engine})`);
         } catch(err) { targetText.value = '❌ 錯誤'; setMsg(`錯誤: ${err.message}`, true); }
     };
+    
+    // 貼上按鈕
     document.getElementById('pasteBtn').onclick = async () => { try { const t = await navigator.clipboard.readText(); sourceText.value = t; setMsg('已貼上'); } catch(e){ setMsg('無法讀取剪貼簿', true); } };
+    // 清除原文
     document.getElementById('clearSource').onclick = () => { sourceText.value = ''; setMsg('原文已清除'); };
+    // 複製結果
     document.getElementById('copyBtn').onclick = async () => { if(!targetText.value) return; await navigator.clipboard.writeText(targetText.value); setMsg('已複製'); };
+    // 清除結果
     document.getElementById('clearTarget').onclick = () => { targetText.value = ''; setMsg('結果已清除'); };
+
+    // ========== 新增：開啟檔案功能 ==========
+    const fileBtn = document.getElementById('fileBtn');
+    const fileInput = document.getElementById('fileInput');
+
+    fileBtn.onclick = () => {
+        fileInput.click();
+    };
+
+    fileInput.onchange = (event) => {
+        const file = event.target.files[0];
+        if (!file) return;
+
+        // 限制檔案大小 5MB
+        if (file.size > 5 * 1024 * 1024) {
+            setMsg('檔案過大，請選擇小於 5MB 的文字檔', true);
+            fileInput.value = ''; // 清空，以便再次選擇同一檔案
+            return;
+        }
+
+        const reader = new FileReader();
+        reader.onload = (e) => {
+            sourceText.value = e.target.result;
+            setMsg(`✅ 已開啟檔案：${file.name} (${(file.size/1024).toFixed(1)} KB)`, false);
+        };
+        reader.onerror = () => {
+            setMsg('❌ 檔案讀取失敗，請重試', true);
+        };
+        // 以 UTF-8 讀取
+        reader.readAsText(file, 'UTF-8');
+    };
+    // ====================================
 
     // 折疊面板
     const accordion = document.getElementById('keyAccordion');
