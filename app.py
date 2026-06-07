@@ -1,16 +1,17 @@
+# app.py
 import os
 import requests
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, send_from_directory
 from flask_cors import CORS
 
-app = Flask(__name__)
-CORS(app)  # 允许跨域（开发用，生产同源无需）
+app = Flask(__name__, static_folder='.', static_url_path='')
+CORS(app)
 
-# 从环境变量读取 API Keys（Render 设置环境变量）
+# 从环境变量读取 API Keys（Render 设定环境变量）
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
 DEEPL_API_KEY = os.environ.get("DEEPL_API_KEY", "")
 
-# 语言配置映射（与前端一致）
+# 语言设定映射（与前端一致）
 LANG_CONFIG = {
     "zh-TW": {"googleCode": "zh-TW", "deeplCode": "ZH-HANT", "geminiName": "繁體中文"},
     "zh-CN": {"googleCode": "zh-CN", "deeplCode": "ZH", "geminiName": "簡體中文"},
@@ -36,10 +37,10 @@ def translate_with_google(text, src_lang, tgt_lang):
 def translate_with_deepl(text, src_lang, tgt_lang, api_key):
     """DeepL 翻译（需要有效 key）"""
     if not api_key:
-        raise ValueError("DeepL API Key 未设置")
+        raise ValueError("DeepL API Key 未設定")
     tgt_code = LANG_CONFIG.get(tgt_lang, {}).get("deeplCode")
     if not tgt_code:
-        raise ValueError(f"不支持 DeepL 目标语言: {tgt_lang}")
+        raise ValueError(f"不支援 DeepL 目標語言: {tgt_lang}")
     src_code = LANG_CONFIG.get(src_lang, {}).get("deeplCode")
     if src_code == "ZH-HANT":
         src_code = "ZH"
@@ -55,7 +56,7 @@ def translate_with_deepl(text, src_lang, tgt_lang, api_key):
 def translate_with_gemini(text, src_lang, tgt_lang, api_key):
     """Gemini AI 翻译（优先引擎）"""
     if not api_key:
-        raise ValueError("Gemini API Key 未设置")
+        raise ValueError("Gemini API Key 未設定")
     src_name = LANG_CONFIG.get(src_lang, {}).get("geminiName", src_lang)
     tgt_name = LANG_CONFIG.get(tgt_lang, {}).get("geminiName", tgt_lang)
     prompt = f"請將以下{src_name}內容翻譯成{tgt_name}，只輸出翻譯結果，不要附加任何說明。\n原文: {text}"
@@ -79,9 +80,9 @@ def translate():
     src = data.get("source_lang", "zh-TW")
     tgt = data.get("target_lang", "en")
     if not text:
-        return jsonify({"error": "请输入要翻译的文字"}), 400
+        return jsonify({"error": "請輸入要翻譯的文字"}), 400
     if src == tgt:
-        return jsonify({"result": text, "engine": "相同语言"})
+        return jsonify({"result": text, "engine": "相同語言"})
 
     # 1. 尝试 Gemini
     gemini_success = False
@@ -93,7 +94,7 @@ def translate():
             used_engine = "Gemini AI"
             gemini_success = True
         except Exception as e:
-            print(f"Gemini 失败: {e}")
+            print(f"Gemini 失敗: {e}")
             # 继续降级
 
     # 2. 降级后备
@@ -103,33 +104,33 @@ def translate():
             is_east_asian = tgt in ["ja", "ko"]
             if is_western:
                 final_result = translate_with_google(text, src, tgt)
-                used_engine = "Google 翻译 (英法德)"
+                used_engine = "Google 翻譯 (英法德)"
             elif is_east_asian:
                 # 优先 DeepL（若有 Key），否则直接用 Google
                 if DEEPL_API_KEY:
                     try:
                         final_result = translate_with_deepl(text, src, tgt, DEEPL_API_KEY)
-                        used_engine = "DeepL 翻译 (日韩)"
+                        used_engine = "DeepL 翻譯 (日韓)"
                     except Exception as e:
-                        print(f"DeepL 失败，降级 Google: {e}")
+                        print(f"DeepL 失敗，降級 Google: {e}")
                         final_result = translate_with_google(text, src, tgt)
-                        used_engine = "Google 翻译 (DeepL降级)"
+                        used_engine = "Google 翻譯 (DeepL降級)"
                 else:
                     final_result = translate_with_google(text, src, tgt)
-                    used_engine = "Google 翻译 (日韩无DeepL)"
+                    used_engine = "Google 翻譯 (日韓無DeepL)"
             else:
                 # 中文或其它一律 Google
                 final_result = translate_with_google(text, src, tgt)
-                used_engine = "Google 翻译"
+                used_engine = "Google 翻譯"
         except Exception as e:
-            return jsonify({"error": f"翻译失败: {str(e)}"}), 500
+            return jsonify({"error": f"翻譯失敗: {str(e)}"}), 500
 
     return jsonify({"result": final_result, "engine": used_engine})
 
-# 健康检查（Render 需要）
+# 提供前端 index.html
 @app.route("/")
 def index():
-    return app.send_static_file("index.html")
+    return send_from_directory('.', 'index.html')
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
