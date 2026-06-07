@@ -6,9 +6,9 @@ from flask_cors import CORS
 app = Flask(__name__, static_folder='.', static_url_path='')
 CORS(app)
 
-# 从环境变量读取 API Keys（Render 上设置）
-GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
-DEEPL_API_KEY = os.environ.get("DEEPL_API_KEY", "")
+# 环境变量作为后备（如果前端没有提供 Key）
+ENV_GEMINI_KEY = os.environ.get("GEMINI_API_KEY", "")
+ENV_DEEPL_KEY = os.environ.get("DEEPL_API_KEY", "")
 
 # 语言配置
 LANG_CONFIG = {
@@ -52,45 +52,31 @@ def translate_gemini(text, src, tgt, api_key):
     tgt_name = LANG_CONFIG[tgt]["name"]
     prompt = f"請將以下{src_name}內容翻譯成{tgt_name}，只輸出翻譯結果，不要附加任何說明。\n原文: {text}"
     
-    # 使用您原本可工作的模型名称
-    model_name = "gemini-2.5-flash"
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent?key={api_key}"
-    
-    payload = {
-        "contents": [{"parts": [{"text": prompt}]}],
-        "generationConfig": {"temperature": 0.2, "maxOutputTokens": 2000}
-    }
-    
-    try:
-        resp = requests.post(url, json=payload, timeout=30)
-        print(f"[Gemini] HTTP Status: {resp.status_code}")
-        if resp.status_code != 200:
-            print(f"[Gemini] Error Response: {resp.text[:500]}")
-            if resp.status_code == 404:
-                raise Exception(f"模型 {model_name} 不存在，請檢查名稱")
-            elif resp.status_code == 403:
-                raise Exception("API Key 無效或沒有權限")
-            elif resp.status_code == 429:
-                raise Exception("QUOTA_EXCEEDED")
+    # 尝试多个模型名称（按优先级）
+    model_names = ["gemini-2.5-flash", "gemini-1.5-flash", "gemini-1.5-pro", "gemini-2.0-flash-exp"]
+    last_error = None
+    for model_name in model_names:
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent?key={api_key}"
+        payload = {
+            "contents": [{"parts": [{"text": prompt}]}],
+            "generationConfig": {"temperature": 0.2, "maxOutputTokens": 2000}
+        }
+        try:
+            resp = requests.post(url, json=payload, timeout=30)
+            if resp.status_code == 200:
+                data = resp.json()
+                result = data.get("candidates", [{}])[0].get("content", {}).get("parts", [{}])[0].get("text")
+                if result:
+                    return result.strip()
+                else:
+                    raise Exception("回應中無翻譯結果")
+            elif resp.status_code == 404:
+                continue  # 模型不存在，尝试下一个
             else:
-                raise Exception(f"API 錯誤 {resp.status_code}: {resp.text[:200]}")
-        
-        data = resp.json()
-        # 解析結果
-        result = None
-        if "candidates" in data and len(data["candidates"]) > 0:
-            candidate = data["candidates"][0]
-            if "content" in candidate and "parts" in candidate["content"]:
-                result = candidate["content"]["parts"][0].get("text")
-        if not result:
-            raise Exception("無法從回應中提取翻譯結果")
-        return result.strip()
-    except requests.exceptions.RequestException as e:
-        print(f"[Gemini] Request Exception: {e}")
-        raise Exception(f"網路請求失敗: {str(e)}")
-    except Exception as e:
-        print(f"[Gemini] Exception: {e}")
-        raise
+                last_error = f"狀態碼 {resp.status_code}: {resp.text[:200]}"
+        except Exception as e:
+            last_error = str(e)
+    raise Exception(f"所有模型嘗試失敗，最後錯誤: {last_error}")
 
 @app.route("/translate", methods=["POST"])
 def translate():
@@ -98,29 +84,34 @@ def translate():
     text = data.get("text", "").strip()
     src = data.get("source_lang", "zh-TW")
     tgt = data.get("target_lang", "en")
+    
+    # 从前端请求中获取 Key（优先），否则用环境变量
+    gemini_key = data.get("gemini_key", "") or ENV_GEMINI_KEY
+    deepl_key = data.get("deepl_key", "") or ENV_DEEPL_KEY
+    
     if not text:
         return jsonify({"error": "請輸入要翻譯的文字"}), 400
     if src == tgt:
         return jsonify({"result": text, "engine": "相同語言"})
 
-    # 優先使用 Gemini（如果有 API Key）
-    if GEMINI_API_KEY:
+    # 尝试 Gemini
+    if gemini_key:
         try:
-            result = translate_gemini(text, src, tgt, GEMINI_API_KEY)
-            return jsonify({"result": result, "engine": "Gemini AI (2.5 Flash)"})
+            result = translate_gemini(text, src, tgt, gemini_key)
+            return jsonify({"result": result, "engine": "Gemini AI"})
         except Exception as e:
             print(f"Gemini 失敗: {e}")
-            # 繼續降級
+            # 继续降级
 
-    # 後備翻譯
+    # 后备翻译
     try:
         if tgt in ["en", "fr", "de"]:
             result = translate_google(text, src, tgt)
             engine = "Google 翻譯 (英法德)"
         elif tgt in ["ja", "ko"]:
-            if DEEPL_API_KEY:
+            if deepl_key:
                 try:
-                    result = translate_deepl(text, src, tgt, DEEPL_API_KEY)
+                    result = translate_deepl(text, src, tgt, deepl_key)
                     engine = "DeepL 翻譯 (日韓)"
                 except Exception as e:
                     print(f"DeepL 失敗，降級 Google: {e}")
