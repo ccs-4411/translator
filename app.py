@@ -1,4 +1,3 @@
-# app.py
 import os
 import requests
 from flask import Flask, request, jsonify, send_from_directory
