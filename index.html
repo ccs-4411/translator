@@ -1,66 +1,341 @@
-<!-- index.html -->
 <!DOCTYPE html>
 <html lang="zh-TW">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-    <title>智慧翻譯 | 安全後端版</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, user-scalable=yes">
+    <title>智慧翻譯 | 多引擎支援</title>
     <style>
-        * { margin: 0; padding: 0; box-sizing: border-box; }
-        body { background: #f5f7fb; font-family: system-ui, sans-serif; padding: 0; }
-        .container { max-width: 800px; margin: 0 auto; padding: 16px; }
-        h1 { font-size: 1.4rem; margin-bottom: 16px; text-align: center; color: #2c3e66; }
-        .translate-card { background: white; border-radius: 24px; padding: 16px; margin-bottom: 16px; box-shadow: 0 2px 8px rgba(0,0,0,0.05); }
-        .box-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; flex-wrap: wrap; gap: 8px; }
-        select { flex: 2; padding: 10px; border-radius: 40px; border: 1px solid #cfdde6; background: white; font-size: 0.9rem; }
-        button { background: #eef2f8; border: none; padding: 8px 16px; border-radius: 40px; cursor: pointer; font-size: 0.8rem; }
-        button.primary { background: #2c3e66; color: white; }
-        button.danger { background: #fff0f0; color: #b13e3e; border: 1px solid #ffcdcd; }
-        textarea { width: 100%; padding: 14px; font-size: 1rem; border-radius: 20px; border: 1px solid #e2e8f0; resize: vertical; min-height: 160px; }
-        .translate-bar { text-align: center; margin: 8px 0 16px; }
-        .btn-translate { background: #2c3e66; color: white; padding: 12px 24px; font-size: 1rem; border-radius: 60px; width: 80%; max-width: 260px; border: none; }
-        .message { background: #eef2fa; border-radius: 20px; padding: 10px 16px; font-size: 0.8rem; border-left: 4px solid #5f7f9e; margin-top: 12px; }
-        .error { background: #ffefef; border-left-color: #d9534f; color: #a94442; }
-        footer { text-align: center; font-size: 0.7rem; color: #6c7a8e; margin-top: 24px; }
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            background: #f5f7fb;
+            font-family: system-ui, -apple-system, 'Segoe UI', 'Roboto', sans-serif;
+            padding: 0;
+            margin: 0;
+        }
+
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            width: 100%;
+            padding: 16px;
+        }
+
+        /* 可收合區塊 (API 金鑰設定) */
+        .accordion {
+            background: white;
+            border-radius: 24px;
+            margin-bottom: 20px;
+            overflow: hidden;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+            transition: all 0.2s;
+        }
+
+        .accordion-header {
+            background: #ffffff;
+            padding: 16px 18px;
+            cursor: pointer;
+            font-weight: 600;
+            font-size: 1rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 1px solid #eef2f6;
+            user-select: none;
+        }
+
+        .accordion-header:hover {
+            background: #f8fafd;
+        }
+
+        .accordion-header .arrow {
+            font-size: 1rem;
+            transition: transform 0.3s ease;
+        }
+
+        .accordion-content {
+            padding: 18px;
+            background: #ffffff;
+            border-top: 1px solid #eff3f8;
+        }
+
+        /* 收合狀態 */
+        .accordion.hide .accordion-content {
+            display: none;
+        }
+
+        .accordion.hide .arrow {
+            transform: rotate(-90deg);
+        }
+
+        /* API 表單 */
+        .api-group {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 12px;
+            align-items: flex-end;
+        }
+
+        .input-flex {
+            flex: 2;
+            min-width: 160px;
+        }
+
+        .btn-group {
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+        }
+
+        label {
+            font-size: 0.7rem;
+            font-weight: 600;
+            color: #4b5565;
+            margin-bottom: 4px;
+            display: block;
+        }
+
+        input {
+            width: 100%;
+            padding: 10px 14px;
+            border-radius: 30px;
+            border: 1px solid #cfdde6;
+            background: #fff;
+            font-size: 0.85rem;
+        }
+
+        button {
+            background: #eef2f8;
+            border: none;
+            padding: 8px 14px;
+            border-radius: 40px;
+            font-weight: 500;
+            cursor: pointer;
+            font-size: 0.8rem;
+            color: #1e2a3a;
+            border: 1px solid #dce3ec;
+            transition: 0.2s;
+        }
+
+        button.primary {
+            background: #2c3e66;
+            color: white;
+            border: none;
+        }
+
+        button.danger {
+            background: #fff0f0;
+            border-color: #ffcdcd;
+            color: #b13e3e;
+        }
+
+        .badge {
+            font-size: 0.65rem;
+            background: #eef2f8;
+            padding: 2px 8px;
+            border-radius: 50px;
+            display: inline-block;
+        }
+
+        hr {
+            margin: 12px 0;
+            border-color: #eef2f6;
+        }
+
+        /* 翻譯卡片 */
+        .translate-card {
+            background: white;
+            border-radius: 24px;
+            padding: 16px;
+            margin-bottom: 16px;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+        }
+
+        .box-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 12px;
+            flex-wrap: wrap;
+            gap: 10px;
+        }
+
+        select {
+            flex: 2;
+            padding: 10px;
+            border-radius: 40px;
+            border: 1px solid #cfdde6;
+            background: white;
+            font-size: 0.9rem;
+        }
+
+        textarea {
+            width: 100%;
+            padding: 14px;
+            font-size: 1rem;
+            border-radius: 20px;
+            border: 1px solid #e2e8f0;
+            background: #fefefe;
+            resize: vertical;
+            line-height: 1.45;
+            min-height: 160px;
+        }
+
+        .translate-bar {
+            text-align: center;
+            margin: 8px 0 16px;
+        }
+
+        .btn-translate {
+            background: #2c3e66;
+            color: white;
+            padding: 12px 24px;
+            font-size: 1rem;
+            border-radius: 60px;
+            width: 80%;
+            max-width: 260px;
+            border: none;
+            font-weight: 600;
+        }
+
+        .message {
+            background: #eef2fa;
+            border-radius: 20px;
+            padding: 10px 16px;
+            font-size: 0.8rem;
+            border-left: 4px solid #5f7f9e;
+            margin-top: 12px;
+        }
+
+        .error {
+            background: #ffefef;
+            border-left-color: #d9534f;
+            color: #a94442;
+        }
+
+        footer {
+            text-align: center;
+            font-size: 0.7rem;
+            color: #6c7a8e;
+            margin-top: 24px;
+        }
+
         @media (max-width: 640px) {
-            .container { padding: 12px; }
-            textarea { min-height: 140px; }
-            .box-header { flex-direction: column; align-items: stretch; }
-            select { width: 100%; }
+            .container {
+                padding: 12px;
+            }
+
+            textarea {
+                min-height: 140px;
+            }
+
+            .box-header {
+                flex-direction: column;
+                align-items: stretch;
+            }
+
+            select {
+                width: 100%;
+            }
+
+            .accordion-header {
+                padding: 12px 16px;
+            }
+
+            .accordion-content {
+                padding: 14px;
+            }
         }
     </style>
 </head>
 <body>
 <div class="container">
-    <h1>🌍 多引擎翻譯 (後端代理)</h1>
+    <!-- 可收合 API 金鑰區塊 -->
+    <div class="accordion" id="keyAccordion">
+        <div class="accordion-header" id="accordionToggle">
+            <span>🔑 API 金鑰設定 (Gemini + DeepL 選用)</span>
+            <span class="arrow">▼</span>
+        </div>
+        <div class="accordion-content" id="accordionContent">
+            <div style="margin-bottom: 20px;">
+                <label>✨ Google Gemini API Key <span class="badge">優先 AI 引擎</span></label>
+                <div class="api-group">
+                    <div class="input-flex">
+                        <input type="password" id="geminiKeyInput" placeholder="輸入 Gemini API Key" autocomplete="off">
+                    </div>
+                    <div class="btn-group">
+                        <button id="saveGeminiBtn" class="primary">💾 儲存</button>
+                        <button id="clearGeminiBtn" class="danger">🗑️ 清除</button>
+                    </div>
+                </div>
+                <div id="geminiStatus" style="font-size:0.7rem; margin-top: 6px; color:#4b6584;"></div>
+            </div>
+            <hr>
+            <div style="margin-top: 8px;">
+                <label>🌐 DeepL API Key <span class="badge">日韓優先 (無效→自動 Google)</span></label>
+                <div class="api-group">
+                    <div class="input-flex">
+                        <input type="password" id="deeplKeyInput" placeholder="DeepL API Key (選填)" autocomplete="off">
+                    </div>
+                    <div class="btn-group">
+                        <button id="saveDeeplBtn" class="primary">💾 儲存</button>
+                        <button id="clearDeeplBtn" class="danger">🗑️ 清除</button>
+                    </div>
+                </div>
+                <div id="deeplStatus" style="font-size:0.7rem; margin-top: 6px; color:#4b6584;"></div>
+            </div>
+            <div class="message" style="margin-top: 16px; background:#eef2fa; padding: 8px 12px;">
+                💡 <strong>翻譯策略</strong>：Gemini優先 → 英/法/德用Google；日/韓：有DeepL Key優先，失敗或無Key自動改Google
+            </div>
+        </div>
+    </div>
+
+    <!-- 翻譯區：上下布局 -->
     <div class="translate-card">
         <div class="box-header">
             <select id="sourceLang"></select>
-            <div><button id="pasteBtn">📋 貼入</button><button id="clearSourceBtn" class="danger">🗑️ 清除</button></div>
+            <div>
+                <button id="pasteBtn">📋 貼上</button>
+                <button id="clearSourceBtn" class="danger">🗑️ 清除</button>
+            </div>
         </div>
         <textarea id="sourceText" placeholder="輸入要翻譯的文字..."></textarea>
     </div>
+
     <div class="translate-card">
         <div class="box-header">
             <select id="targetLang"></select>
-            <div><button id="copyBtn">📋 複製</button><button id="clearTargetBtn" class="danger">🗑️ 清除</button></div>
+            <div>
+                <button id="copyBtn">📋 複製</button>
+                <button id="clearTargetBtn" class="danger">🗑️ 清除</button>
+            </div>
         </div>
         <textarea id="targetText" placeholder="翻譯結果..." readonly></textarea>
     </div>
+
     <div class="translate-bar">
         <button id="translateBtn" class="btn-translate">✨ 開始翻譯</button>
     </div>
     <div id="messageBox" class="message">✅ 就緒 | 引擎: Gemini → 英法德:Google / 日韓:DeepL(有Key) → Google降級</div>
-    <footer>API Key 存放於伺服器環境變數，前端不暴露</footer>
+    <footer>API Key 僅儲存在瀏覽器中，或可搭配後端代理保護金鑰</footer>
 </div>
 
 <script>
-    // 語言設定
+    // ======================= 語言設定 =======================
     const LANG_LIST = [
-        { code: "zh-TW", name: "繁體中文" }, { code: "zh-CN", name: "簡體中文" },
-        { code: "en", name: "英文" }, { code: "ja", name: "日文" },
-        { code: "ko", name: "韓文" }, { code: "fr", name: "法文" }, { code: "de", name: "德文" }
+        { code: "zh-TW", name: "繁體中文" },
+        { code: "zh-CN", name: "簡體中文" },
+        { code: "en", name: "英文" },
+        { code: "ja", name: "日文" },
+        { code: "ko", name: "韓文" },
+        { code: "fr", name: "法文" },
+        { code: "de", name: "德文" }
     ];
+
     function populateSelects() {
         const sourceSel = document.getElementById('sourceLang');
         const targetSel = document.getElementById('targetLang');
@@ -72,70 +347,265 @@
     }
     populateSelects();
 
-    const sourceText = document.getElementById('sourceText');
-    const targetText = document.getElementById('targetText');
-    const sourceLang = document.getElementById('sourceLang');
-    const targetLang = document.getElementById('targetLang');
-    const translateBtn = document.getElementById('translateBtn');
-    const pasteBtn = document.getElementById('pasteBtn');
-    const clearSourceBtn = document.getElementById('clearSourceBtn');
-    const copyBtn = document.getElementById('copyBtn');
-    const clearTargetBtn = document.getElementById('clearTargetBtn');
-    const messageBox = document.getElementById('messageBox');
+    // ======================= 儲存金鑰 (localStorage) =======================
+    const STORAGE_GEMINI = "gemini_api_key";
+    const STORAGE_DEEPL = "deepl_api_key";
+    let currentGeminiKey = localStorage.getItem(STORAGE_GEMINI) || "";
+    let currentDeeplKey = localStorage.getItem(STORAGE_DEEPL) || "";
 
-    function setMessage(msg, isError = false) {
-        messageBox.innerHTML = msg;
-        messageBox.classList.toggle('error', isError);
+    const geminiInput = document.getElementById('geminiKeyInput');
+    const deeplInput = document.getElementById('deeplKeyInput');
+    const saveGeminiBtn = document.getElementById('saveGeminiBtn');
+    const clearGeminiBtn = document.getElementById('clearGeminiBtn');
+    const saveDeeplBtn = document.getElementById('saveDeeplBtn');
+    const clearDeeplBtn = document.getElementById('clearDeeplBtn');
+    const geminiStatusDiv = document.getElementById('geminiStatus');
+    const deeplStatusDiv = document.getElementById('deeplStatus');
+
+    // 儲存/清除 Gemini
+    function saveGemini() {
+        const key = geminiInput.value.trim();
+        if (key) {
+            currentGeminiKey = key;
+            localStorage.setItem(STORAGE_GEMINI, key);
+            geminiStatusDiv.innerHTML = "✅ Gemini Key 已儲存";
+        } else {
+            geminiStatusDiv.innerHTML = "⚠️ 請輸入 Key";
+        }
+    }
+    function clearGemini() {
+        currentGeminiKey = "";
+        localStorage.removeItem(STORAGE_GEMINI);
+        geminiInput.value = "";
+        geminiStatusDiv.innerHTML = "🧹 Gemini Key 已清除";
+    }
+    function saveDeepl() {
+        const key = deeplInput.value.trim();
+        if (key) {
+            currentDeeplKey = key;
+            localStorage.setItem(STORAGE_DEEPL, key);
+            deeplStatusDiv.innerHTML = "✅ DeepL Key 已儲存";
+        } else {
+            deeplStatusDiv.innerHTML = "⚠️ 請輸入 Key";
+        }
+    }
+    function clearDeepl() {
+        currentDeeplKey = "";
+        localStorage.removeItem(STORAGE_DEEPL);
+        deeplInput.value = "";
+        deeplStatusDiv.innerHTML = "🧹 DeepL Key 已清除";
     }
 
-    async function translate() {
-        const text = sourceText.value.trim();
-        if (!text) { setMessage("❌ 請輸入要翻譯的文字", true); return; }
-        const src = sourceLang.value;
-        const tgt = targetLang.value;
-        if (src === tgt) {
-            targetText.value = text;
-            setMessage("✅ 來源語言和目標語言相同，已複製原文");
+    // 載入已儲存的 Key
+    function loadKeys() {
+        if (currentGeminiKey) {
+            geminiInput.value = currentGeminiKey;
+            geminiStatusDiv.innerHTML = "🔑 Gemini Key 已載入";
+        }
+        if (currentDeeplKey) {
+            deeplInput.value = currentDeeplKey;
+            deeplStatusDiv.innerHTML = "🔑 DeepL Key 已載入";
+        }
+    }
+
+    // ======================= 翻譯函數 (前端直接調用 API，無後端) =======================
+    // 本範例直接從瀏覽器調用 API，若需隱藏金鑰請改用後端代理
+    // 以下為前端版本 (金鑰會暴露在瀏覽器中)
+    async function translateWithGoogle(text, srcLang, tgtLang) {
+        const langMap = {
+            "zh-TW": "zh-TW", "zh-CN": "zh-CN", "en": "en",
+            "ja": "ja", "ko": "ko", "fr": "fr", "de": "de"
+        };
+        const src = langMap[srcLang] || "auto";
+        const tgt = langMap[tgtLang] || "en";
+        const url = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=${src}&tl=${tgt}&dt=t&q=${encodeURIComponent(text)}`;
+        const resp = await fetch(url);
+        const data = await resp.json();
+        let translated = "";
+        for (const part of data[0]) if (part[0]) translated += part[0];
+        return translated || text;
+    }
+
+    async function translateWithDeepL(text, srcLang, tgtLang, apiKey) {
+        const targetMap = { "zh-TW": "ZH-HANT", "zh-CN": "ZH", "en": "EN", "ja": "JA", "ko": "KO", "fr": "FR", "de": "DE" };
+        const target = targetMap[tgtLang];
+        if (!target) throw new Error("不支援的目標語言");
+        let sourceLang = targetMap[srcLang];
+        if (sourceLang === "ZH-HANT") sourceLang = "ZH";
+        const params = new URLSearchParams({ text, target_lang: target });
+        if (sourceLang) params.append("source_lang", sourceLang);
+        const resp = await fetch("https://api-free.deepl.com/v2/translate", {
+            method: "POST",
+            headers: { "Authorization": `DeepL-Auth-Key ${apiKey}`, "Content-Type": "application/x-www-form-urlencoded" },
+            body: params
+        });
+        if (!resp.ok) throw new Error("DeepL 請求失敗");
+        const data = await resp.json();
+        return data.translations[0].text;
+    }
+
+    async function translateWithGemini(text, srcLang, tgtLang, apiKey) {
+        const nameMap = { "zh-TW": "繁體中文", "zh-CN": "簡體中文", "en": "英文", "ja": "日文", "ko": "韓文", "fr": "法文", "de": "德文" };
+        const srcName = nameMap[srcLang] || srcLang;
+        const tgtName = nameMap[tgtLang] || tgtLang;
+        const prompt = `請將以下${srcName}內容翻譯成${tgtName}，只輸出翻譯結果，不要附加任何說明。\n原文: ${text}`;
+        const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key=${apiKey}`;
+        const payload = {
+            contents: [{ parts: [{ text: prompt }] }],
+            generationConfig: { temperature: 0.2 }
+        };
+        const resp = await fetch(url, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload)
+        });
+        if (resp.status === 429) throw new Error("QUOTA_EXCEEDED");
+        if (!resp.ok) throw new Error("Gemini 請求失敗");
+        const data = await resp.json();
+        return data.candidates[0].content.parts[0].text.trim();
+    }
+
+    async function translateEastAsian(text, srcLang, tgtLang, deeplKey) {
+        if (deeplKey && deeplKey.trim() !== "") {
+            try {
+                const result = await translateWithDeepL(text, srcLang, tgtLang, deeplKey);
+                return { result, engine: "DeepL 翻譯" };
+            } catch (e) {
+                console.warn("DeepL 失敗，降級 Google", e);
+                const fallback = await translateWithGoogle(text, srcLang, tgtLang);
+                return { result: fallback, engine: "Google 翻譯 (DeepL降級)" };
+            }
+        } else {
+            const fallback = await translateWithGoogle(text, srcLang, tgtLang);
+            return { result: fallback, engine: "Google 翻譯" };
+        }
+    }
+
+    async function performTranslation() {
+        const text = document.getElementById('sourceText').value.trim();
+        if (!text) {
+            setMessage("請輸入要翻譯的文字", true);
             return;
         }
-        targetText.value = "⏳ 翻譯中...";
-        setMessage("🔄 正在呼叫後端翻譯...");
+        const src = document.getElementById('sourceLang').value;
+        const tgt = document.getElementById('targetLang').value;
+        if (src === tgt) {
+            document.getElementById('targetText').value = text;
+            setMessage("來源與目標語言相同，已複製原文");
+            return;
+        }
+
+        const targetTextarea = document.getElementById('targetText');
+        targetTextarea.value = "⏳ 翻譯中...";
+        setMessage("正在翻譯...");
+
+        let finalResult = "";
+        let usedEngine = "";
+
+        // 1. 嘗試 Gemini
+        let geminiSuccess = false;
+        if (currentGeminiKey && currentGeminiKey.trim() !== "") {
+            try {
+                finalResult = await translateWithGemini(text, src, tgt, currentGeminiKey);
+                usedEngine = "Gemini AI";
+                geminiSuccess = true;
+            } catch (err) {
+                console.warn("Gemini 失敗", err);
+                if (err.message === "QUOTA_EXCEEDED") setMessage("Gemini 額度用完，切換後備引擎");
+                else setMessage(`Gemini 錯誤: ${err.message}，改用後備`);
+                geminiSuccess = false;
+            }
+        }
+
+        if (!geminiSuccess) {
+            try {
+                if (["en", "fr", "de"].includes(tgt)) {
+                    finalResult = await translateWithGoogle(text, src, tgt);
+                    usedEngine = "Google 翻譯 (英法德)";
+                } else if (["ja", "ko"].includes(tgt)) {
+                    const { result, engine } = await translateEastAsian(text, src, tgt, currentDeeplKey);
+                    finalResult = result;
+                    usedEngine = engine;
+                } else {
+                    finalResult = await translateWithGoogle(text, src, tgt);
+                    usedEngine = "Google 翻譯";
+                }
+            } catch (err) {
+                targetTextarea.value = "翻譯失敗";
+                setMessage(`錯誤: ${err.message}`, true);
+                return;
+            }
+        }
+
+        targetTextarea.value = finalResult;
+        setMessage(`✅ 翻譯完成 (引擎: ${usedEngine})`);
+    }
+
+    // ======================= UI 輔助函數 =======================
+    function setMessage(msg, isError = false) {
+        const msgBox = document.getElementById('messageBox');
+        msgBox.innerHTML = msg;
+        msgBox.classList.toggle('error', isError);
+    }
+
+    async function pasteText() {
         try {
-            const response = await fetch("/translate", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ text, source_lang: src, target_lang: tgt })
+            const text = await navigator.clipboard.readText();
+            document.getElementById('sourceText').value = text;
+            setMessage("已貼上文字");
+        } catch (e) {
+            setMessage("無法讀取剪貼簿", true);
+        }
+    }
+    function clearSource() {
+        document.getElementById('sourceText').value = "";
+        setMessage("原文已清除");
+    }
+    async function copyResult() {
+        const targetText = document.getElementById('targetText').value;
+        if (!targetText) {
+            setMessage("沒有翻譯結果可複製", true);
+            return;
+        }
+        await navigator.clipboard.writeText(targetText);
+        setMessage("已複製翻譯結果");
+    }
+    function clearTarget() {
+        document.getElementById('targetText').value = "";
+        setMessage("翻譯結果已清除");
+    }
+
+    // ======================= 折疊面板 =======================
+    function initAccordion() {
+        const accordion = document.getElementById('keyAccordion');
+        const toggle = document.getElementById('accordionToggle');
+        if (accordion && toggle) {
+            toggle.addEventListener('click', () => {
+                accordion.classList.toggle('hide');
             });
-            const data = await response.json();
-            if (!response.ok) throw new Error(data.error || "翻譯失敗");
-            targetText.value = data.result;
-            setMessage(`✅ 翻譯完成 (引擎: ${data.engine})`);
-        } catch (err) {
-            targetText.value = "❌ 翻譯出錯";
-            setMessage(`❌ 錯誤: ${err.message}`, true);
         }
     }
 
-    async function pasteFromClipboard() {
-        try {
-            const text = await navigator.clipboard.readText();
-            sourceText.value = text;
-            setMessage("📋 已貼上文字");
-        } catch { setMessage("無法讀取剪貼簿", true); }
+    // ======================= 事件綁定 =======================
+    function bindEvents() {
+        document.getElementById('translateBtn').addEventListener('click', performTranslation);
+        document.getElementById('pasteBtn').addEventListener('click', pasteText);
+        document.getElementById('clearSourceBtn').addEventListener('click', clearSource);
+        document.getElementById('copyBtn').addEventListener('click', copyResult);
+        document.getElementById('clearTargetBtn').addEventListener('click', clearTarget);
+        saveGeminiBtn.addEventListener('click', saveGemini);
+        clearGeminiBtn.addEventListener('click', clearGemini);
+        saveDeeplBtn.addEventListener('click', saveDeepl);
+        clearDeeplBtn.addEventListener('click', clearDeepl);
     }
-    function clearSource() { sourceText.value = ""; setMessage("原文已清除"); }
-    async function copyResult() {
-        if (!targetText.value) { setMessage("沒有翻譯結果可複製", true); return; }
-        await navigator.clipboard.writeText(targetText.value);
-        setMessage("📋 翻譯結果已複製");
-    }
-    function clearTarget() { targetText.value = ""; setMessage("翻譯結果已清除"); }
 
-    translateBtn.addEventListener('click', translate);
-    pasteBtn.addEventListener('click', pasteFromClipboard);
-    clearSourceBtn.addEventListener('click', clearSource);
-    copyBtn.addEventListener('click', copyResult);
-    clearTargetBtn.addEventListener('click', clearTarget);
+    // 初始化
+    function init() {
+        loadKeys();
+        bindEvents();
+        initAccordion();
+    }
+    init();
 </script>
 </body>
 </html>
