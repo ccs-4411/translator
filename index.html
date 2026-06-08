@@ -181,6 +181,11 @@
     const downloadSrtBtn = document.getElementById('downloadSrtBtn');
     let currentSrtContent = null;
 
+    // 輔助函數：啟用/停用下載按鈕
+    function setDownloadButtonEnabled(enabled) {
+        downloadSrtBtn.disabled = !enabled;
+    }
+
     translateBtn.onclick = async () => {
         const text = sourceText.value.trim();
         if (!text) { setMsg('請輸入內容', true); return; }
@@ -188,9 +193,10 @@
         const tgt = targetLang.value;
 
         if (srtModeCheckbox.checked) {
+            // SRT 模式
             targetText.value = '⏳ 正在解析並翻譯字幕...';
             setMsg('🔄 SRT 字幕翻譯中，請稍候...');
-            downloadSrtBtn.disabled = true;
+            setDownloadButtonEnabled(false);
             currentSrtContent = null;
             try {
                 const gemini_key = localStorage.getItem('gemini_key') || '';
@@ -207,18 +213,24 @@
                     })
                 });
                 const data = await response.json();
-                if (!response.ok) throw new Error(data.error);
+                if (!response.ok) {
+                    throw new Error(data.error || '伺服器錯誤');
+                }
+                if (!data.srt_output) {
+                    throw new Error('後端未回傳 srt_output');
+                }
                 currentSrtContent = data.srt_output;
                 targetText.value = `✅ 翻譯完成，共 ${data.count} 條字幕。點擊「下載雙語 SRT」按鈕儲存檔案。`;
                 setMsg(`✅ 雙語 SRT 已準備就緒 (${data.count} 條)`);
-                downloadSrtBtn.disabled = false;
+                setDownloadButtonEnabled(true);
             } catch (err) {
+                console.error('SRT 翻譯錯誤:', err);
                 targetText.value = '❌ 錯誤';
                 setMsg(`❌ SRT 翻譯失敗: ${err.message}`, true);
-                downloadSrtBtn.disabled = true;
+                setDownloadButtonEnabled(false);
             }
         } else {
-            // 普通文字翻譯
+            // 普通文字翻譯模式
             if (src === tgt) { targetText.value = text; setMsg('來源與目標相同'); return; }
             targetText.value = '⏳ 翻譯中...';
             setMsg('🔄 呼叫後端...');
@@ -238,6 +250,8 @@
                 targetText.value = '❌ 錯誤';
                 setMsg(`錯誤: ${err.message}`, true);
             }
+            // 普通模式下停用 SRT 下載按鈕
+            setDownloadButtonEnabled(false);
         }
     };
 
@@ -246,14 +260,20 @@
             setMsg('沒有可下載的 SRT 內容，請先執行 SRT 翻譯', true);
             return;
         }
-        const blob = new Blob([currentSrtContent], { type: 'text/plain' });
-        const a = document.createElement('a');
-        const url = URL.createObjectURL(blob);
-        a.href = url;
-        a.download = 'bilingual_subtitles.srt';
-        a.click();
-        URL.revokeObjectURL(url);
-        setMsg('✅ 雙語 SRT 已下載');
+        try {
+            const blob = new Blob([currentSrtContent], { type: 'text/plain' });
+            const a = document.createElement('a');
+            const url = URL.createObjectURL(blob);
+            a.href = url;
+            a.download = 'bilingual_subtitles.srt';
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+            setMsg('✅ 雙語 SRT 已下載');
+        } catch (err) {
+            setMsg('下載失敗: ' + err.message, true);
+        }
     };
 </script>
 </body>
