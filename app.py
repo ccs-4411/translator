@@ -1,14 +1,13 @@
 import os
 import requests
+import re
+import logging
 from flask import Flask, request, jsonify, send_from_directory
 from flask_cors import CORS
-import logging
+from youtube_transcript_api import YouTubeTranscriptApi
 
-# --- 应用配置 ---
 app = Flask(__name__, static_folder='.', static_url_path='')
 CORS(app)
-
-# 设置日志级别，确保打印的信息能在 Render 日志中看到
 logging.basicConfig(level=logging.INFO)
 
 # 从环境变量读取API Keys作为后备
@@ -26,9 +25,8 @@ LANG_CONFIG = {
     "de": {"google": "de", "deepl": "DE", "name": "德文"}
 }
 
-# --- 翻译引擎函数 ---
+# ---------- 翻译引擎函数 ----------
 def translate_google(text, src, tgt):
-    # ... (此函数保持不变，功能正常) ...
     src_code = LANG_CONFIG.get(src, {}).get("google", "auto")
     tgt_code = LANG_CONFIG.get(tgt, {}).get("google", "en")
     url = f"https://translate.googleapis.com/translate_a/single?client=gtx&sl={src_code}&tl={tgt_code}&dt=t&q={requests.utils.quote(text)}"
@@ -38,7 +36,6 @@ def translate_google(text, src, tgt):
     return "".join(part[0] for part in data[0] if part[0]) or text
 
 def translate_deepl(text, src, tgt, api_key):
-    # ... (此函数保持不变，功能正常) ...
     if not api_key:
         raise ValueError("DeepL API Key 未設定")
     tgt_code = LANG_CONFIG[tgt]["deepl"]
@@ -54,139 +51,171 @@ def translate_deepl(text, src, tgt, api_key):
     return resp.json()["translations"][0]["text"]
 
 def translate_gemini(text, src, tgt, api_key):
-    """
-    核心修复点：
-    1. 自动通过 models.list 获取用户可用的模型列表。
-    2. 优先匹配最佳的模型（支持 generateContent 的 gemini 模型）。
-    3. 添加详细日志，记录模型选择过程和 API 响应。
-    """
     if not api_key:
         raise ValueError("Gemini API Key 未設定")
     src_name = LANG_CONFIG[src]["name"]
     tgt_name = LANG_CONFIG[tgt]["name"]
     prompt = f"請將以下{src_name}內容翻譯成{tgt_name}，只輸出翻譯結果，不要附加任何說明。\n原文: {text}"
-
-    # 1. 获取可用模型列表 (关键修复)
+    # 获取可用模型列表
     list_url = f"https://generativelanguage.googleapis.com/v1beta/models?key={api_key}"
-    app.logger.info(f"[Gemini] 获取模型列表: {list_url}")
     try:
         list_resp = requests.get(list_url, timeout=10)
         list_resp.raise_for_status()
         models_data = list_resp.json()
         available_models = [model['name'].replace('models/', '') for model in models_data.get('models', [])]
-        app.logger.info(f"[Gemini] 您账户可用的模型列表: {available_models}")
     except Exception as e:
-        app.logger.error(f"[Gemini] 获取模型列表失败: {e}")
-        raise Exception(f"无法获取Gemini模型列表，请检查API Key是否有效: {e}")
-
-    # 2. 智能选择模型
+        raise Exception(f"无法获取Gemini模型列表: {e}")
     selected_model = None
-    # 优先查找包含 'gemini' 且支持 'generateContent' 的模型
     for model_name in available_models:
-        # 简单过滤，选择看起来最合适的模型
         if 'gemini' in model_name:
             selected_model = model_name
             break
     if not selected_model:
-        raise Exception("您的 API Key 下没有可用的生成模型 (model with generateContent capability)")
-    
-    app.logger.info(f"[Gemini] 已选择模型: {selected_model}")
-
-    # 3. 调用选中的模型进行翻译
+        raise Exception("没有可用的Gemini模型")
     url = f"https://generativelanguage.googleapis.com/v1beta/models/{selected_model}:generateContent?key={api_key}"
     payload = {
         "contents": [{"parts": [{"text": prompt}]}],
         "generationConfig": {"temperature": 0.2, "maxOutputTokens": 2000}
     }
-    
-    try:
-        app.logger.info(f"[Gemini] 正在调用模型 {selected_model} 进行翻译...")
-        resp = requests.post(url, json=payload, timeout=30)
-        app.logger.info(f"[Gemini] HTTP 状态码: {resp.status_code}")
-        
-        if resp.status_code != 200:
-            app.logger.error(f"[Gemini] API 请求失败，响应内容: {resp.text[:500]}")
-            if resp.status_code == 429:
-                raise Exception("API 调用次数超限 (QUOTA_EXCEEDED)")
-            elif resp.status_code == 403:
-                raise Exception("API Key 无效或无权限 (FORBIDDEN)")
-            else:
-                raise Exception(f"API 错误 {resp.status_code}: {resp.text[:200]}")
-        
-        data = resp.json()
-        result = data.get("candidates", [{}])[0].get("content", {}).get("parts", [{}])[0].get("text")
-        if not result:
-            app.logger.error(f"[Gemini] 无法解析 API 响应，响应内容: {data}")
-            raise Exception("无法从 Gemini API 响应中解析出翻译结果")
-        
-        app.logger.info(f"[Gemini] 翻译成功，结果长度: {len(result)} 字符")
-        return result.strip()
-    except Exception as e:
-        app.logger.error(f"[Gemini] 翻译过程中发生异常: {e}")
-        raise Exception(f"Gemini 翻译失败: {str(e)}")
+    resp = requests.post(url, json=payload, timeout=30)
+    if resp.status_code != 200:
+        raise Exception(f"Gemini API 错误 {resp.status_code}: {resp.text[:200]}")
+    data = resp.json()
+    result = data.get("candidates", [{}])[0].get("content", {}).get("parts", [{}])[0].get("text")
+    if not result:
+        raise Exception("无法解析Gemini响应")
+    return result.strip()
 
+# ---------- YouTube 字幕处理 ----------
+def extract_video_id(url):
+    patterns = [
+        r'(?:youtube\.com\/watch\?v=)([\w-]+)',
+        r'(?:youtu\.be\/)([\w-]+)',
+        r'(?:youtube\.com\/embed\/)([\w-]+)',
+        r'(?:youtube\.com\/v\/)([\w-]+)'
+    ]
+    for pattern in patterns:
+        match = re.search(pattern, url)
+        if match:
+            return match.group(1)
+    return None
 
-# --- API 路由 ---
-@app.route("/translate", methods=["POST"])
+def translate_subtitle_text(text, src_lang, tgt_lang, gemini_key, deepl_key):
+    # 优先 Gemini
+    if gemini_key:
+        try:
+            return translate_gemini(text, src_lang, tgt_lang, gemini_key)
+        except Exception as e:
+            app.logger.warning(f"字幕 Gemini 失败: {e}")
+    # 日韩尝试 DeepL
+    if tgt_lang in ["ja", "ko"] and deepl_key:
+        try:
+            return translate_deepl(text, src_lang, tgt_lang, deepl_key)
+        except Exception as e:
+            app.logger.warning(f"字幕 DeepL 失败: {e}")
+    # 降级 Google
+    return translate_google(text, src_lang, tgt_lang)
+
+# ---------- API 路由 ----------
+@app.route('/translate', methods=['POST'])
 def translate():
     data = request.get_json()
-    app.logger.info(f"[Request] 收到翻译请求: {data}")
-
-    text = data.get("text", "").strip()
-    src = data.get("source_lang", "zh-TW")
-    tgt = data.get("target_lang", "en")
-    
-    # 从前端请求中获取 Key（优先），否则用环境变量
-    gemini_key = data.get("gemini_key", "") or ENV_GEMINI_KEY
-    deepl_key = data.get("deepl_key", "") or ENV_DEEPL_KEY
-    
+    text = data.get('text', '').strip()
+    src = data.get('source_lang', 'zh-TW')
+    tgt = data.get('target_lang', 'en')
+    gemini_key = data.get('gemini_key', '') or ENV_GEMINI_KEY
+    deepl_key = data.get('deepl_key', '') or ENV_DEEPL_KEY
     if not text:
-        return jsonify({"error": "請輸入要翻譯的文字"}), 400
+        return jsonify({"error": "請輸入文字"}), 400
     if src == tgt:
         return jsonify({"result": text, "engine": "相同語言"})
-
     # 尝试 Gemini
-    gemini_used = False
     if gemini_key:
         try:
             result = translate_gemini(text, src, tgt, gemini_key)
             return jsonify({"result": result, "engine": "Gemini AI"})
         except Exception as e:
-            app.logger.error(f"[Request] Gemini 翻译失败: {e}，将使用后备引擎")
-            gemini_used = True
-    else:
-        app.logger.warning("[Request] 未提供 Gemini API Key，跳过 Gemini 尝试")
-
-    # 后备翻译
+            app.logger.error(f"Gemini 失败: {e}")
+    # 后备策略
     try:
         if tgt in ["en", "fr", "de"]:
             result = translate_google(text, src, tgt)
-            engine = "Google 翻譯 (英法德)"
-        elif tgt in ["ja", "ko"]:
-            if deepl_key:
-                try:
-                    result = translate_deepl(text, src, tgt, deepl_key)
-                    engine = "DeepL 翻譯 (日韓)"
-                except Exception as e:
-                    app.logger.error(f"[Request] DeepL 失败，降级 Google: {e}")
-                    result = translate_google(text, src, tgt)
-                    engine = "Google 翻譯 (DeepL降級)"
-            else:
+            engine = "Google 翻譯"
+        elif tgt in ["ja", "ko"] and deepl_key:
+            try:
+                result = translate_deepl(text, src, tgt, deepl_key)
+                engine = "DeepL 翻譯"
+            except:
                 result = translate_google(text, src, tgt)
-                engine = "Google 翻譯 (日韓無DeepL)"
+                engine = "Google 翻譯 (DeepL降級)"
         else:
             result = translate_google(text, src, tgt)
             engine = "Google 翻譯"
-        app.logger.info(f"[Request] 后备翻译成功，引擎: {engine}")
         return jsonify({"result": result, "engine": engine})
     except Exception as e:
-        app.logger.error(f"[Request] 所有翻译引擎均失败: {e}")
         return jsonify({"error": f"翻譯失敗: {str(e)}"}), 500
 
-@app.route("/")
+@app.route('/process_youtube', methods=['POST'])
+def process_youtube():
+    data = request.get_json()
+    video_url = data.get('url', '').strip()
+    gemini_key = data.get('gemini_key', '') or ENV_GEMINI_KEY
+    deepl_key = data.get('deepl_key', '') or ENV_DEEPL_KEY
+    target_lang = data.get('target_lang', 'zh-TW')
+    if not video_url:
+        return jsonify({"error": "請提供 YouTube 網址"}), 400
+    video_id = extract_video_id(video_url)
+    if not video_id:
+        return jsonify({"error": "無效的 YouTube 網址"}), 400
+    try:
+        transcript_list = YouTubeTranscriptApi.list_transcripts(video_id)
+        try:
+            transcript = transcript_list.find_transcript(['en'])
+        except:
+            transcript = list(transcript_list)[0]
+        original_entries = transcript.fetch()
+        if not original_entries:
+            return jsonify({"error": "未偵測到任何字幕內容"}), 400
+        src_lang_code = transcript.language_code
+        # 映射语言代码到我们的系统（例如 'en' -> 'en', 'ja' -> 'ja', 'zh-Hant' -> 'zh-TW'）
+        # 简单处理：如果代码以 'zh' 开头，设为 'zh-TW'；否则直接用前两个字符
+        if src_lang_code.startswith('zh'):
+            src_lang = 'zh-TW'
+        else:
+            src_lang = src_lang_code[:2] if len(src_lang_code) >= 2 else 'en'
+        translated_entries = []
+        for entry in original_entries:
+            original_text = entry['text'].strip()
+            if not original_text:
+                translated_text = ""
+            else:
+                try:
+                    translated_text = translate_subtitle_text(original_text, src_lang, target_lang, gemini_key, deepl_key)
+                except Exception as e:
+                    app.logger.error(f"翻譯單條字幕失敗: {e}")
+                    translated_text = f"[翻譯失敗] {original_text}"
+            translated_entries.append({
+                "start": entry['start'],
+                "duration": entry['duration'],
+                "original": original_text,
+                "translated": translated_text
+            })
+        return jsonify({
+            "subtitles": translated_entries,
+            "video_id": video_id,
+            "source_lang": src_lang_code,
+            "target_lang": target_lang
+        })
+    except Exception as e:
+        app.logger.error(f"YouTube 處理失敗: {e}")
+        if "No transcripts were found" in str(e):
+            return jsonify({"error": "此影片沒有任何字幕（CC 字幕）"}), 400
+        return jsonify({"error": f"獲取字幕失敗: {str(e)}"}), 500
+
+@app.route('/')
 def index():
     return send_from_directory('.', 'index.html')
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port, debug=False)
