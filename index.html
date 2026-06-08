@@ -8,12 +8,14 @@
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body { background: #f5f7fb; font-family: system-ui, sans-serif; padding: 0; }
         .container { max-width: 800px; margin: 0 auto; padding: 16px; }
+
         .accordion { background: white; border-radius: 24px; margin-bottom: 20px; overflow: hidden; box-shadow: 0 2px 8px rgba(0,0,0,0.05); }
         .accordion-header { background: #fff; padding: 14px 18px; cursor: pointer; font-weight: 600; display: flex; justify-content: space-between; border-bottom: 1px solid #eef2f6; }
         .accordion-header .arrow { transition: transform 0.3s; }
         .accordion.hide .accordion-content { display: none; }
         .accordion.hide .arrow { transform: rotate(-90deg); }
         .accordion-content { padding: 16px; }
+
         .api-group { display: flex; flex-wrap: wrap; gap: 10px; align-items: flex-end; }
         .input-flex { flex: 2; min-width: 160px; }
         button { background: #eef2f8; border: 1px solid #dce3ec; padding: 8px 14px; border-radius: 40px; cursor: pointer; font-size: 0.8rem; }
@@ -21,30 +23,62 @@
         button.danger { background: #fff0f0; border-color: #ffcdcd; color: #b13e3e; }
         input, select { width: 100%; padding: 10px 14px; border-radius: 30px; border: 1px solid #cfdde6; font-size: 0.9rem; }
         label { font-size: 0.7rem; font-weight: 600; color: #4b5565; margin-bottom: 4px; display: block; }
+
         .translate-card { background: white; border-radius: 24px; padding: 16px; margin-bottom: 16px; }
         .box-header { display: flex; justify-content: space-between; margin-bottom: 12px; flex-wrap: wrap; gap: 8px; }
         select { flex: 2; }
         textarea { width: 100%; padding: 14px; border-radius: 20px; border: 1px solid #e2e8f0; font-size: 1rem; min-height: 160px; resize: vertical; }
+
         .translate-bar { text-align: center; margin: 8px 0 16px; }
         .btn-translate { background: #2c3e66; color: white; padding: 12px 24px; border-radius: 60px; width: 80%; max-width: 260px; border: none; font-weight: 600; font-size: 1rem; }
+
         .message { background: #eef2fa; border-radius: 20px; padding: 10px 16px; margin-top: 12px; border-left: 4px solid #5f7f9e; font-size: 0.8rem; }
         .error { background: #ffefef; border-left-color: #d9534f; color: #a94442; }
         .warning { background: #fff3cd; border-left-color: #ffc107; color: #856404; }
-        .srt-mode { margin: 12px 0; display: flex; gap: 20px; align-items: center; flex-wrap: wrap; }
+
+        /* SRT 模式：复选框和文字在同一行，字体放大 */
+        .srt-mode { 
+            margin: 12px 0; 
+            display: flex; 
+            gap: 24px; 
+            align-items: center; 
+            flex-wrap: wrap; 
+            font-size: 1rem; 
+        }
+        .srt-mode label {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 1rem;
+            font-weight: normal;
+            cursor: pointer;
+            color: #1f2937;
+        }
+        .srt-mode input[type="checkbox"] {
+            width: 18px;
+            height: 18px;
+            margin: 0;
+            cursor: pointer;
+        }
+
         .download-area { margin-top: 16px; text-align: center; }
         footer { text-align: center; font-size: 0.7rem; color: #6c7a8e; margin-top: 24px; }
         hr { margin: 12px 0; }
+
         .preview-box { background: #f8f9fa; border-radius: 16px; padding: 10px 12px; margin-top: 12px; max-height: 300px; overflow-y: auto; font-size: 0.95rem; line-height: 1.4; white-space: pre-wrap; font-family: monospace; }
         .preview-header { font-weight: 600; margin-bottom: 6px; font-size: 0.8rem; color: #2c3e66; }
+
         @media (max-width: 640px) {
             .container { padding: 12px; }
             .box-header { flex-direction: column; align-items: stretch; }
             select { width: 100%; }
+            .srt-mode { gap: 16px; }
         }
     </style>
 </head>
 <body>
 <div class="container">
+    <!-- API 金鑰設定區塊（折疊） -->
     <div class="accordion" id="keyAccordion">
         <div class="accordion-header" id="accordionToggle">
             <span>🔑 API 金鑰設定 (Gemini + DeepL 選用)</span>
@@ -74,6 +108,7 @@
         </div>
     </div>
 
+    <!-- 文字翻譯卡片 -->
     <div class="translate-card">
         <div class="box-header">
             <select id="sourceLang"></select>
@@ -85,7 +120,7 @@
             </div>
         </div>
         <textarea id="sourceText" placeholder="輸入要翻譯的文字... (若要處理SRT字幕，請勾選下方模式)"></textarea>
-        <div style="font-size:0.7rem; color:#2c3e66; margin-top:6px;">💡 提示：若貼上 SRT 字幕內容（含時間軸），請勾選「SRT 字幕模式」並確保「來源語言」正確。</div>
+        <div style="font-size:0.7rem; color:#2c3e66; margin-top:6px;">💡 提示：若貼上 SRT 字幕內容（含時間軸），請勾選下方「SRT 字幕模式」並確保「來源語言」正確。</div>
     </div>
     <div class="translate-card">
         <div class="box-header">
@@ -95,18 +130,26 @@
         <textarea id="targetText" placeholder="翻譯結果..." readonly></textarea>
     </div>
 
+    <!-- SRT 模式控制項：複選框在前、文字在後，字體放大 -->
     <div class="srt-mode">
-        <label><input type="checkbox" id="srtModeCheckbox" checked> 🎞️ SRT 字幕模式 (保留時間軸)</label>
-        <label><input type="checkbox" id="originalFirstCheckbox" checked> 原字幕在上</label>
+        <label>
+            <input type="checkbox" id="srtModeCheckbox" checked> 🎞️ SRT 字幕模式 (保留時間軸)
+        </label>
+        <label>
+            <input type="checkbox" id="originalFirstCheckbox" checked> 原字幕在上
+        </label>
     </div>
 
-    <div class="translate-bar"><button id="translateBtn" class="btn-translate">✨ 開始翻譯</button></div>
+    <div class="translate-bar">
+        <button id="translateBtn" class="btn-translate">✨ 開始翻譯</button>
+    </div>
 
     <div class="download-area">
         <button id="downloadSrtBtn" class="primary" disabled>📥 下載雙語 SRT</button>
         <div id="srtReadyStatus" style="font-size:0.7rem; margin-top:6px;"></div>
     </div>
 
+    <!-- 預覽區（可選） -->
     <div id="previewArea" style="display: none;">
         <div class="preview-header">📄 原始字幕（預覽）</div>
         <div id="previewOriginal" class="preview-box"></div>
@@ -258,17 +301,7 @@
                     source_lang: srcLang
                 })
             });
-
-            // 先尝试获取文本，以防 JSON 解析失败
-            const responseText = await response.text();
-            let data;
-            try {
-                data = JSON.parse(responseText);
-            } catch (jsonErr) {
-                console.error('回應不是 JSON:', responseText);
-                throw new Error(`後端回應不是 JSON，可能是伺服器錯誤。回應內容: ${responseText.substring(0, 200)}`);
-            }
-
+            const data = await response.json();
             if (!response.ok) throw new Error(data.error || `HTTP ${response.status}`);
             if (!data.srt_output || typeof data.srt_output !== 'string') {
                 throw new Error('後端回傳資料缺少 srt_output 欄位');
@@ -277,7 +310,6 @@
             targetText.value = `✅ SRT 翻譯完成！共 ${data.count} 條字幕。請點擊下方按鈕下載雙語 SRT 檔案。`;
             setMsg(`✅ 雙語 SRT 已就緒 (${data.count} 條字幕)`);
             enableDownloadButton(true);
-
             const lines = currentSrtContent.split('\n');
             const previewLines = lines.slice(0, 40).join('\n');
             previewOriginal.innerText = previewLines;
