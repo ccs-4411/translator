@@ -9,11 +9,9 @@ app = Flask(__name__, static_folder='.', static_url_path='')
 CORS(app)
 logging.basicConfig(level=logging.INFO)
 
-# 从环境变量读取 API Keys
 ENV_GEMINI_KEY = os.environ.get("GEMINI_API_KEY", "")
 ENV_DEEPL_KEY = os.environ.get("DEEPL_API_KEY", "")
 
-# 语言配置
 LANG_CONFIG = {
     "zh-TW": {"google": "zh-TW", "deepl": "ZH-HANT", "name": "繁體中文"},
     "zh-CN": {"google": "zh-CN", "deepl": "ZH", "name": "簡體中文"},
@@ -21,7 +19,8 @@ LANG_CONFIG = {
     "ja": {"google": "ja", "deepl": "JA", "name": "日文"},
     "ko": {"google": "ko", "deepl": "KO", "name": "韓文"},
     "fr": {"google": "fr", "deepl": "FR", "name": "法文"},
-    "de": {"google": "de", "deepl": "DE", "name": "德文"}
+    "de": {"google": "de", "deepl": "DE", "name": "德文"},
+    "es": {"google": "es", "deepl": "ES", "name": "西班牙文"}
 }
 
 # ---------- 翻译引擎函数 ----------
@@ -52,21 +51,18 @@ def translate_deepl(text, src, tgt, api_key):
 def translate_gemini(text, src, tgt, api_key):
     if not api_key:
         raise ValueError("Gemini API Key 未設定")
-    src_name = LANG_CONFIG[src]["name"]
-    tgt_name = LANG_CONFIG[tgt]["name"]
+    src_name = LANG_CONFIG.get(src, {}).get("name", src)
+    tgt_name = LANG_CONFIG.get(tgt, {}).get("name", tgt)
     prompt = f"請將以下{src_name}內容翻譯成{tgt_name}，只輸出翻譯結果，不要附加任何說明。\n原文: {text}"
 
     list_url = f"https://generativelanguage.googleapis.com/v1beta/models?key={api_key}"
-    app.logger.info(f"[Gemini] 获取模型列表: {list_url}")
     try:
         list_resp = requests.get(list_url, timeout=10)
         list_resp.raise_for_status()
         models_data = list_resp.json()
         available_models = [model['name'].replace('models/', '') for model in models_data.get('models', [])]
-        app.logger.info(f"[Gemini] 可用模型: {available_models}")
     except Exception as e:
-        app.logger.error(f"[Gemini] 获取模型列表失败: {e}")
-        raise Exception(f"无法获取Gemini模型列表，请检查API Key是否有效: {e}")
+        raise Exception(f"无法获取Gemini模型列表: {e}")
 
     selected_model = None
     for model_name in available_models:
@@ -74,42 +70,24 @@ def translate_gemini(text, src, tgt, api_key):
             selected_model = model_name
             break
     if not selected_model:
-        raise Exception("您的 API Key 下没有可用的生成模型")
-
-    app.logger.info(f"[Gemini] 已选择模型: {selected_model}")
+        raise Exception("没有可用的 Gemini 模型")
 
     url = f"https://generativelanguage.googleapis.com/v1beta/models/{selected_model}:generateContent?key={api_key}"
     payload = {
         "contents": [{"parts": [{"text": prompt}]}],
         "generationConfig": {"temperature": 0.2, "maxOutputTokens": 2000}
     }
+    resp = requests.post(url, json=payload, timeout=30)
+    if resp.status_code != 200:
+        raise Exception(f"Gemini API 错误 {resp.status_code}")
+    data = resp.json()
+    result = data.get("candidates", [{}])[0].get("content", {}).get("parts", [{}])[0].get("text")
+    if not result:
+        raise Exception("无法解析 Gemini 回应")
+    return result.strip()
 
-    try:
-        app.logger.info(f"[Gemini] 调用模型进行翻译...")
-        resp = requests.post(url, json=payload, timeout=30)
-        app.logger.info(f"[Gemini] HTTP 状态码: {resp.status_code}")
-        if resp.status_code != 200:
-            app.logger.error(f"[Gemini] API 请求失败: {resp.text[:500]}")
-            if resp.status_code == 429:
-                raise Exception("API 调用次数超限 (QUOTA_EXCEEDED)")
-            elif resp.status_code == 403:
-                raise Exception("API Key 无效或无权限 (FORBIDDEN)")
-            else:
-                raise Exception(f"API 错误 {resp.status_code}: {resp.text[:200]}")
-        data = resp.json()
-        result = data.get("candidates", [{}])[0].get("content", {}).get("parts", [{}])[0].get("text")
-        if not result:
-            app.logger.error(f"[Gemini] 无法解析 API 响应: {data}")
-            raise Exception("无法从 Gemini API 响应中解析出翻译结果")
-        app.logger.info(f"[Gemini] 翻译成功，结果长度: {len(result)} 字符")
-        return result.strip()
-    except Exception as e:
-        app.logger.error(f"[Gemini] 翻译异常: {e}")
-        raise Exception(f"Gemini 翻译失败: {str(e)}")
-
-# ---------- SRT 处理辅助函数 ----------
+# ---------- SRT 辅助 ----------
 def parse_srt(content):
-    """解析 SRT 内容，返回列表 [{'start':秒, 'end':秒, 'text':原文}]"""
     pattern = r'(\d+)\n(\d{2}:\d{2}:\d{2},\d{3}) --> (\d{2}:\d{2}:\d{2},\d{3})\n(.*?)(?=\n\d+\n|\n*$)'
     blocks = re.findall(pattern, content, re.DOTALL)
     subtitles = []
@@ -137,8 +115,6 @@ def format_srt_time(seconds):
 @app.route("/translate", methods=["POST"])
 def translate():
     data = request.get_json()
-    app.logger.info(f"[Request] 收到翻译请求: {data}")
-
     text = data.get("text", "").strip()
     src = data.get("source_lang", "zh-TW")
     tgt = data.get("target_lang", "en")
@@ -146,42 +122,33 @@ def translate():
     deepl_key = data.get("deepl_key", "") or ENV_DEEPL_KEY
 
     if not text:
-        return jsonify({"error": "請輸入要翻譯的文字"}), 400
+        return jsonify({"error": "請輸入文字"}), 400
     if src == tgt:
         return jsonify({"result": text, "engine": "相同語言"})
 
-    # 尝试 Gemini
     if gemini_key:
         try:
             result = translate_gemini(text, src, tgt, gemini_key)
             return jsonify({"result": result, "engine": "Gemini AI"})
         except Exception as e:
-            app.logger.error(f"[Request] Gemini 翻译失败: {e}，将使用后备引擎")
+            app.logger.error(f"Gemini 失败: {e}")
 
-    # 后备翻译
     try:
-        if tgt in ["en", "fr", "de"]:
+        if tgt in ["en", "fr", "de", "es"]:
             result = translate_google(text, src, tgt)
-            engine = "Google 翻譯 (英法德)"
-        elif tgt in ["ja", "ko"]:
-            if deepl_key:
-                try:
-                    result = translate_deepl(text, src, tgt, deepl_key)
-                    engine = "DeepL 翻譯 (日韓)"
-                except Exception as e:
-                    app.logger.error(f"[Request] DeepL 失败，降级 Google: {e}")
-                    result = translate_google(text, src, tgt)
-                    engine = "Google 翻譯 (DeepL降級)"
-            else:
+            engine = "Google 翻譯"
+        elif tgt in ["ja", "ko"] and deepl_key:
+            try:
+                result = translate_deepl(text, src, tgt, deepl_key)
+                engine = "DeepL 翻譯"
+            except:
                 result = translate_google(text, src, tgt)
-                engine = "Google 翻譯 (日韓無DeepL)"
+                engine = "Google 翻譯 (DeepL降級)"
         else:
             result = translate_google(text, src, tgt)
             engine = "Google 翻譯"
-        app.logger.info(f"[Request] 后备翻译成功，引擎: {engine}")
         return jsonify({"result": result, "engine": engine})
     except Exception as e:
-        app.logger.error(f"[Request] 所有翻译引擎均失败: {e}")
         return jsonify({"error": f"翻譯失敗: {str(e)}"}), 500
 
 @app.route('/translate_srt', methods=['POST'])
@@ -192,43 +159,41 @@ def translate_srt():
     deepl_key = data.get('deepl_key', '') or ENV_DEEPL_KEY
     target_lang = data.get('target_lang', 'zh-TW')
     original_first = data.get('original_first', True)
-    source_lang = data.get('source_lang', 'en')   # 可选：从请求获取源语言，默认为英文
+    source_lang = data.get('source_lang', 'auto')   # 自動偵測或指定
 
     if not srt_content:
         return jsonify({"error": "请贴上 SRT 内容"}), 400
 
-    # 解析 SRT
     try:
         subtitles = parse_srt(srt_content)
         if not subtitles:
-            return jsonify({"error": "无法解析 SRT 格式，请检查内容"}), 400
+            return jsonify({"error": "无法解析 SRT 格式"}), 400
     except Exception as e:
-        return jsonify({"error": f"SRT 解析失败: {str(e)}"}), 400
+        return jsonify({"error": f"解析失败: {str(e)}"}), 400
 
-    # 逐句翻译，增强错误处理
     translated_subs = []
     for idx, sub in enumerate(subtitles, 1):
         original = sub['text']
         if not original.strip():
             translated = ""
         else:
-            try:
-                # 优先 Gemini，其次 Google 翻译
-                if gemini_key:
-                    try:
-                        translated = translate_gemini(original, source_lang, target_lang, gemini_key)
-                        app.logger.info(f"成功使用 Gemini 翻译第 {idx} 条")
-                    except Exception as e:
-                        app.logger.warning(f"Gemini 翻译第 {idx} 条失败: {e}，改用 Google 翻译")
-                        translated = translate_google(original, source_lang, target_lang)
-                else:
+            translated = None
+            # 优先 Gemini
+            if gemini_key:
+                try:
+                    translated = translate_gemini(original, source_lang, target_lang, gemini_key)
+                except Exception as e:
+                    app.logger.warning(f"Gemini 第{idx}条失败: {e}")
+            # 若 Gemini 失败或无 key，尝试 Google 翻译
+            if not translated:
+                try:
                     translated = translate_google(original, source_lang, target_lang)
-            except Exception as e:
-                app.logger.error(f"第 {idx} 条字幕翻译失败: {e}")
-                translated = original   # 翻译失败时，将原文作为译文（保证内容不为空）
-        # 确保译文不为空
-        if not translated or not translated.strip():
-            translated = original
+                except Exception as e:
+                    app.logger.error(f"Google 第{idx}条失败: {e}")
+                    translated = None
+            # 最终 fallback：带标记的原文
+            if not translated or not translated.strip():
+                translated = f"[未翻译] {original}"
         translated_subs.append({
             'start': sub['start'],
             'end': sub['end'],
@@ -236,15 +201,15 @@ def translate_srt():
             'translated': translated
         })
 
-    # 生成双语 SRT
+    # 生成 SRT 输出
     srt_output = ""
     for i, sub in enumerate(translated_subs, 1):
         start_str = format_srt_time(sub['start'])
         end_str = format_srt_time(sub['end'])
         if original_first:
-            text = f"{sub['original']}\n{sub['translated']}" if sub['translated'] else sub['original']
+            text = f"{sub['original']}\n{sub['translated']}"
         else:
-            text = f"{sub['translated']}\n{sub['original']}" if sub['translated'] else sub['original']
+            text = f"{sub['translated']}\n{sub['original']}"
         srt_output += f"{i}\n{start_str} --> {end_str}\n{text}\n\n"
 
     return jsonify({
