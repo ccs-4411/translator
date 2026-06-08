@@ -36,7 +36,6 @@
         .error { background: #ffefef; border-left-color: #d9534f; color: #a94442; }
         .warning { background: #fff3cd; border-left-color: #ffc107; color: #856404; }
 
-        /* SRT 模式：复选框和文字在同一行，字体放大 */
         .srt-mode { 
             margin: 12px 0; 
             display: flex; 
@@ -65,9 +64,6 @@
         footer { text-align: center; font-size: 0.7rem; color: #6c7a8e; margin-top: 24px; }
         hr { margin: 12px 0; }
 
-        .preview-box { background: #f8f9fa; border-radius: 16px; padding: 10px 12px; margin-top: 12px; max-height: 300px; overflow-y: auto; font-size: 0.95rem; line-height: 1.4; white-space: pre-wrap; font-family: monospace; }
-        .preview-header { font-weight: 600; margin-bottom: 6px; font-size: 0.8rem; color: #2c3e66; }
-
         @media (max-width: 640px) {
             .container { padding: 12px; }
             .box-header { flex-direction: column; align-items: stretch; }
@@ -78,7 +74,6 @@
 </head>
 <body>
 <div class="container">
-    <!-- API 金鑰設定區塊（折疊） -->
     <div class="accordion" id="keyAccordion">
         <div class="accordion-header" id="accordionToggle">
             <span>🔑 API 金鑰設定 (Gemini + DeepL 選用)</span>
@@ -108,7 +103,6 @@
         </div>
     </div>
 
-    <!-- 文字翻譯卡片 -->
     <div class="translate-card">
         <div class="box-header">
             <select id="sourceLang"></select>
@@ -130,7 +124,6 @@
         <textarea id="targetText" placeholder="翻譯結果..." readonly></textarea>
     </div>
 
-    <!-- SRT 模式控制項：複選框在前、文字在後，字體放大 -->
     <div class="srt-mode">
         <label>
             <input type="checkbox" id="srtModeCheckbox" checked> 🎞️ SRT 字幕模式 (保留時間軸)
@@ -147,14 +140,6 @@
     <div class="download-area">
         <button id="downloadSrtBtn" class="primary" disabled>📥 下載雙語 SRT</button>
         <div id="srtReadyStatus" style="font-size:0.7rem; margin-top:6px;"></div>
-    </div>
-
-    <!-- 預覽區（可選） -->
-    <div id="previewArea" style="display: none;">
-        <div class="preview-header">📄 原始字幕（預覽）</div>
-        <div id="previewOriginal" class="preview-box"></div>
-        <div class="preview-header">✨ 翻譯結果（預覽）</div>
-        <div id="previewTranslated" class="preview-box"></div>
     </div>
 
     <div id="messageBox" class="message">✅ 就緒 | 引擎: Gemini 優先 → 英法德:Google / 日韓:DeepL(有Key) → Google降級</div>
@@ -231,9 +216,6 @@
     const translateBtn = document.getElementById('translateBtn');
     const downloadSrtBtn = document.getElementById('downloadSrtBtn');
     const srtReadyStatus = document.getElementById('srtReadyStatus');
-    const previewArea = document.getElementById('previewArea');
-    const previewOriginal = document.getElementById('previewOriginal');
-    const previewTranslated = document.getElementById('previewTranslated');
     let currentSrtContent = null;
 
     function enableDownloadButton(enabled) {
@@ -274,7 +256,6 @@
                 setMsg(`錯誤: ${err.message}`, 'error');
             }
             enableDownloadButton(false);
-            previewArea.style.display = 'none';
             return;
         }
 
@@ -283,7 +264,6 @@
         setMsg('🔄 SRT 字幕翻譯中，請稍候...');
         enableDownloadButton(false);
         currentSrtContent = null;
-        previewArea.style.display = 'none';
 
         try {
             const gemini_key = localStorage.getItem('gemini_key') || '';
@@ -307,14 +287,10 @@
                 throw new Error('後端回傳資料缺少 srt_output 欄位');
             }
             currentSrtContent = data.srt_output;
-            targetText.value = `✅ SRT 翻譯完成！共 ${data.count} 條字幕。請點擊下方按鈕下載雙語 SRT 檔案。`;
-            setMsg(`✅ 雙語 SRT 已就緒 (${data.count} 條字幕)`);
+            // 將合併後的雙語 SRT 內容顯示在翻譯結果框
+            targetText.value = currentSrtContent;
+            setMsg(`✅ SRT 翻譯完成！共 ${data.count} 條字幕。可點擊下方按鈕下載 SRT 檔案。`);
             enableDownloadButton(true);
-            const lines = currentSrtContent.split('\n');
-            const previewLines = lines.slice(0, 40).join('\n');
-            previewOriginal.innerText = previewLines;
-            previewTranslated.innerText = previewLines;
-            previewArea.style.display = 'block';
         } catch (err) {
             console.error('SRT 翻譯失敗:', err);
             targetText.value = '❌ SRT 翻譯失敗';
