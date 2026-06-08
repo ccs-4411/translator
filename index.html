@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
     <link rel="apple-touch-icon" href="多語言翻譯.png">
-    <title>智慧翻譯 | 多引擎</title>
+    <title>智慧翻譯 | 多引擎 + 雙語SRT</title>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body { background: #f5f7fb; font-family: system-ui, sans-serif; padding: 0; }
@@ -25,13 +25,14 @@
         .translate-card { background: white; border-radius: 24px; padding: 16px; margin-bottom: 16px; }
         .box-header { display: flex; justify-content: space-between; margin-bottom: 12px; flex-wrap: wrap; gap: 8px; }
         select { flex: 2; padding: 10px; border-radius: 40px; border: 1px solid #cfdde6; background: white; font-size: 0.9rem; }
-        textarea { width: 100%; padding: 14px; border-radius: 20px; border: 1px solid #e2e8f0; font-size: 1rem; resize: vertical; }
+        textarea { width: 100%; padding: 14px; border-radius: 20px; border: 1px solid #e2e8f0; font-size: 1rem; min-height: 160px; resize: vertical; }
         .translate-bar { text-align: center; margin: 8px 0 16px; }
         .btn-translate { background: #2c3e66; color: white; padding: 12px 24px; border-radius: 60px; width: 80%; max-width: 260px; border: none; font-weight: 600; font-size: 1rem; }
         .message { background: #eef2fa; border-radius: 20px; padding: 10px 16px; margin-top: 12px; border-left: 4px solid #5f7f9e; font-size: 0.8rem; }
         .error { background: #ffefef; border-left-color: #d9534f; color: #a94442; }
         footer { text-align: center; font-size: 0.7rem; color: #6c7a8e; margin-top: 24px; }
         hr { margin: 12px 0; border-color: #eef2f6; }
+        .srt-mode { margin: 12px 0; display: flex; gap: 20px; align-items: center; flex-wrap: wrap; }
         @media (max-width: 640px) {
             .container { padding: 12px; }
             .box-header { flex-direction: column; align-items: stretch; }
@@ -41,7 +42,6 @@
 </head>
 <body>
 <div class="container">
-    <!-- API 金鑰設定（原有） -->
     <div class="accordion" id="keyAccordion">
         <div class="accordion-header" id="accordionToggle">
             <span>🔑 API 金鑰設定 (Gemini + DeepL 選用)</span>
@@ -71,7 +71,6 @@
         </div>
     </div>
 
-    <!-- 文字翻译卡片（原有） -->
     <div class="translate-card">
         <div class="box-header">
             <select id="sourceLang"></select>
@@ -79,10 +78,10 @@
                 <button id="pasteBtn">📋 貼上</button>
                 <button id="fileBtn">📂 開啟檔案</button>
                 <button id="clearSource" class="danger">清除</button>
-                <input type="file" id="fileInput" accept=".txt,.md,.csv" style="display: none;" />
+                <input type="file" id="fileInput" accept=".txt,.md,.csv,.srt" style="display: none;" />
             </div>
         </div>
-        <textarea id="sourceText" placeholder="輸入要翻譯的文字..."></textarea>
+        <textarea id="sourceText" placeholder="輸入要翻譯的文字... (若是SRT字幕，請勾選下方模式)"></textarea>
     </div>
     <div class="translate-card">
         <div class="box-header">
@@ -91,37 +90,23 @@
         </div>
         <textarea id="targetText" placeholder="翻譯結果..." readonly></textarea>
     </div>
-    <div class="translate-bar"><button id="translateBtn" class="btn-translate">✨ 開始翻譯</button></div>
-    <div id="messageBox" class="message">✅ 就緒 | 引擎: Gemini 優先 → 英法德:Google / 日韓:DeepL(有Key) → Google降級</div>
 
-    <!-- ========== 新增：SRT 字幕翻译（双语下载） ========== -->
-    <div class="translate-card" style="background: #f0f9ff;">
-        <div class="box-header">
-            <span>📝 SRT 字幕翻译（产生双语 SRT）</span>
-            <div><button id="clearSrtBtn" class="danger">清空</button></div>
-        </div>
-        <div class="api-group" style="margin-bottom: 12px;">
-            <textarea id="srtInput" rows="6" placeholder="请贴上 SRT 字幕内容，格式例如：&#10;1&#10;00:00:01,000 --> 00:00:03,000&#10;Hello world&#10;&#10;2&#10;00:00:04,000 --> 00:00:06,000&#10;How are you?" style="flex: 1; width: 100%;"></textarea>
-        </div>
-        <div style="display: flex; gap: 12px; margin-bottom: 12px;">
-            <button id="uploadSrtBtn" style="background: #6c5ce7;">📂 上传 .srt 文件</button>
-            <button id="translateSrtBtn" class="primary" style="background: #2c3e66;">🌐 翻译为双语 SRT</button>
-        </div>
-        <div id="srtStatus" class="message" style="margin-bottom: 12px;">💡 贴上 SRT 内容或上传 .srt 文件，将翻译每句字幕并产生双语 SRT 供下载</div>
-        <div style="display: flex; gap: 12px;">
-            <button id="downloadBilingualSrtBtn" class="primary" disabled style="background: #2c3e66; flex: 1;">📥 下载双语 SRT</button>
-        </div>
-        <div id="srtPreview" style="margin-top: 16px; max-height: 200px; overflow-y: auto; background: #f8f9fa; border-radius: 16px; padding: 12px; font-size: 0.8rem; display: none;">
-            <div><strong>预览（前几条）：</strong></div>
-            <div id="srtPreviewContent"></div>
-        </div>
+    <!-- SRT 模式控制項 -->
+    <div class="srt-mode">
+        <label style="display: flex; align-items: center; gap: 8px;">
+            <input type="checkbox" id="srtModeCheckbox"> 🎞️ SRT 字幕模式 (保留時間軸)
+        </label>
+        <label style="display: flex; align-items: center; gap: 8px;">
+            <input type="checkbox" id="originalFirstCheckbox" checked> 原字幕在上
+        </label>
     </div>
 
+    <div class="translate-bar"><button id="translateBtn" class="btn-translate">✨ 開始翻譯</button></div>
+    <div id="messageBox" class="message">✅ 就緒 | 引擎: Gemini 優先 → 英法德:Google / 日韓:DeepL(有Key) → Google降級</div>
     <footer>金鑰僅儲存於瀏覽器，並加密傳送至後端（後端不記錄）</footer>
 </div>
 
 <script>
-    // ---------- 原有代码 ----------
     const LANG_LIST = [
         { code: "zh-TW", name: "繁體中文" }, { code: "zh-CN", name: "簡體中文" },
         { code: "en", name: "英文" }, { code: "ja", name: "日文" },
@@ -136,6 +121,7 @@
     }
     populateSelects();
 
+    // 金鑰管理
     const geminiInput = document.getElementById('geminiKey');
     const deeplInput = document.getElementById('deeplKey');
     const geminiStatus = document.getElementById('geminiStatus');
@@ -159,27 +145,7 @@
     const msgBox = document.getElementById('messageBox');
     function setMsg(msg, isErr=false) { msgBox.innerHTML = msg; msgBox.classList.toggle('error', isErr); }
 
-    document.getElementById('translateBtn').onclick = async () => {
-        const text = sourceText.value.trim();
-        if(!text){ setMsg('請輸入文字', true); return; }
-        const src = sourceLang.value, tgt = targetLang.value;
-        if(src === tgt){ targetText.value = text; setMsg('來源與目標相同'); return; }
-        targetText.value = '⏳ 翻譯中...';
-        setMsg('🔄 呼叫後端...');
-        try {
-            const gemini_key = localStorage.getItem('gemini_key') || '';
-            const deepl_key = localStorage.getItem('deepl_key') || '';
-            const res = await fetch('/translate', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ text, source_lang: src, target_lang: tgt, gemini_key, deepl_key })
-            });
-            const data = await res.json();
-            if(!res.ok) throw new Error(data.error || '失敗');
-            targetText.value = data.result;
-            setMsg(`✅ 完成 (引擎: ${data.engine})`);
-        } catch(err) { targetText.value = '❌ 錯誤'; setMsg(`錯誤: ${err.message}`, true); }
-    };
+    // 貼上、檔案等輔助功能（保持原有）
     document.getElementById('pasteBtn').onclick = async () => { try { const t = await navigator.clipboard.readText(); sourceText.value = t; setMsg('已貼上'); } catch(e){ setMsg('無法讀取剪貼簿', true); } };
     document.getElementById('clearSource').onclick = () => { sourceText.value = ''; setMsg('原文已清除'); };
     document.getElementById('copyBtn').onclick = async () => { if(targetText.value) await navigator.clipboard.writeText(targetText.value); setMsg('已複製'); };
@@ -199,95 +165,73 @@
     const accordion = document.getElementById('keyAccordion');
     document.getElementById('accordionToggle').onclick = () => accordion.classList.toggle('hide');
 
-    // ---------- 新增：SRT 翻译逻辑 ----------
-    const srtInput = document.getElementById('srtInput');
-    const uploadSrtBtn = document.getElementById('uploadSrtBtn');
-    const translateSrtBtn = document.getElementById('translateSrtBtn');
-    const clearSrtBtn = document.getElementById('clearSrtBtn');
-    const downloadBilingualBtn = document.getElementById('downloadBilingualSrtBtn');
-    const srtStatus = document.getElementById('srtStatus');
-    const srtPreview = document.getElementById('srtPreview');
-    const srtPreviewContent = document.getElementById('srtPreviewContent');
+    // 核心翻譯按鈕（整合普通模式與SRT模式）
+    const srtModeCheckbox = document.getElementById('srtModeCheckbox');
+    const originalFirstCheckbox = document.getElementById('originalFirstCheckbox');
+    const translateBtn = document.getElementById('translateBtn');
 
-    let currentSrtOutput = null;
+    translateBtn.onclick = async () => {
+        const text = sourceText.value.trim();
+        if (!text) { setMsg('請輸入內容', true); return; }
+        const src = sourceLang.value;
+        const tgt = targetLang.value;
 
-    function setSrtMsg(msg, isErr = false) {
-        srtStatus.innerHTML = msg;
-        srtStatus.classList.toggle('error', isErr);
-    }
-
-    uploadSrtBtn.onclick = () => {
-        const input = document.createElement('input');
-        input.type = 'file';
-        input.accept = '.srt,.txt';
-        input.onchange = (e) => {
-            const file = e.target.files[0];
-            if (!file) return;
-            const reader = new FileReader();
-            reader.onload = (ev) => {
-                srtInput.value = ev.target.result;
-                setSrtMsg(`✅ 已載入檔案：${file.name}`);
-            };
-            reader.onerror = () => setSrtMsg('檔案讀取失敗', true);
-            reader.readAsText(file, 'UTF-8');
-        };
-        input.click();
-    };
-
-    translateSrtBtn.onclick = async () => {
-        const srtContent = srtInput.value.trim();
-        if (!srtContent) {
-            setSrtMsg('請貼上 SRT 內容', true);
-            return;
+        if (srtModeCheckbox.checked) {
+            // ========= SRT 模式：調用 /translate_srt 並下載文件 =========
+            targetText.value = '⏳ 正在解析並翻譯字幕...';
+            setMsg('🔄 SRT 字幕翻譯中，請稍候...');
+            try {
+                const gemini_key = localStorage.getItem('gemini_key') || '';
+                const deepl_key = localStorage.getItem('deepl_key') || '';
+                const response = await fetch('/translate_srt', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        srt_content: text,
+                        gemini_key: gemini_key,
+                        deepl_key: deepl_key,
+                        target_lang: tgt,
+                        original_first: originalFirstCheckbox.checked
+                    })
+                });
+                const data = await response.json();
+                if (!response.ok) throw new Error(data.error);
+                // 下載 SRT 檔案
+                const blob = new Blob([data.srt_output], { type: 'text/plain' });
+                const a = document.createElement('a');
+                const url = URL.createObjectURL(blob);
+                a.href = url;
+                a.download = 'bilingual_subtitles.srt';
+                a.click();
+                URL.revokeObjectURL(url);
+                setMsg(`✅ 雙語 SRT 已下載 (共 ${data.count} 條字幕)`);
+                targetText.value = 'SRT 已下載，請查看瀏覽器下載資料夾';
+            } catch (err) {
+                targetText.value = '❌ 錯誤';
+                setMsg(`❌ SRT 翻譯失敗: ${err.message}`, true);
+            }
+        } else {
+            // ========= 普通文字翻譯模式 =========
+            if (src === tgt) { targetText.value = text; setMsg('來源與目標相同'); return; }
+            targetText.value = '⏳ 翻譯中...';
+            setMsg('🔄 呼叫後端...');
+            try {
+                const gemini_key = localStorage.getItem('gemini_key') || '';
+                const deepl_key = localStorage.getItem('deepl_key') || '';
+                const res = await fetch('/translate', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ text, source_lang: src, target_lang: tgt, gemini_key, deepl_key })
+                });
+                const data = await res.json();
+                if (!res.ok) throw new Error(data.error || '失敗');
+                targetText.value = data.result;
+                setMsg(`✅ 完成 (引擎: ${data.engine})`);
+            } catch (err) {
+                targetText.value = '❌ 錯誤';
+                setMsg(`錯誤: ${err.message}`, true);
+            }
         }
-        setSrtMsg('⏳ 翻譯中，請稍候...');
-        downloadBilingualBtn.disabled = true;
-        try {
-            const gemini_key = localStorage.getItem('gemini_key') || '';
-            const deepl_key = localStorage.getItem('deepl_key') || '';
-            const response = await fetch('/translate_srt', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    srt_content: srtContent,
-                    gemini_key: gemini_key,
-                    deepl_key: deepl_key,
-                    target_lang: 'zh-TW'
-                })
-            });
-            const data = await response.json();
-            if (!response.ok) throw new Error(data.error);
-            currentSrtOutput = data.srt_output;
-            setSrtMsg(`✅ 翻譯完成，共 ${data.count} 條字幕，可下載雙語 SRT`);
-            downloadBilingualBtn.disabled = false;
-
-            // 预览前 5 条
-            const lines = currentSrtOutput.split('\n');
-            const previewLines = lines.slice(0, 30).join('\n');
-            srtPreviewContent.innerText = previewLines + (lines.length > 30 ? '\n...' : '');
-            srtPreview.style.display = 'block';
-        } catch (err) {
-            setSrtMsg(`❌ 錯誤：${err.message}`, true);
-            srtPreview.style.display = 'none';
-        }
-    };
-
-    clearSrtBtn.onclick = () => {
-        srtInput.value = '';
-        setSrtMsg('已清空');
-        downloadBilingualBtn.disabled = true;
-        srtPreview.style.display = 'none';
-        currentSrtOutput = null;
-    };
-
-    downloadBilingualBtn.onclick = () => {
-        if (!currentSrtOutput) return;
-        const blob = new Blob([currentSrtOutput], { type: 'text/plain' });
-        const a = document.createElement('a');
-        a.href = URL.createObjectURL(blob);
-        a.download = 'bilingual_subtitles.srt';
-        a.click();
-        URL.revokeObjectURL(a.href);
     };
 </script>
 </body>
