@@ -1,0 +1,17 @@
+services:
+  - type: web
+    name: translator
+    runtime: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn app:app
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.12.9
+      - key: GEMINI_API_KEY
+        sync: false   # 手動在 Render Dashboard 填入
+      - key: DEEPL_API_KEY
+        sync: false
+    # 安裝系統套件 (ffmpeg 是 yt-dlp 處理字幕的建議依賴)
+    packages:
+      - ffmpeg
+      - yt-dlp
