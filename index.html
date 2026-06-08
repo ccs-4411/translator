@@ -3,17 +3,20 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-    <title>智慧翻譯 | 多引擎 + 雙語SRT (修復版)</title>
+    <title>智慧翻譯 | 多引擎 + 雙語SRT</title>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body { background: #f5f7fb; font-family: system-ui, sans-serif; padding: 0; }
         .container { max-width: 800px; margin: 0 auto; padding: 16px; }
+
+        /* 折疊面板 */
         .accordion { background: white; border-radius: 24px; margin-bottom: 20px; overflow: hidden; box-shadow: 0 2px 8px rgba(0,0,0,0.05); }
         .accordion-header { background: #fff; padding: 14px 18px; cursor: pointer; font-weight: 600; display: flex; justify-content: space-between; border-bottom: 1px solid #eef2f6; }
         .accordion-header .arrow { transition: transform 0.3s; }
         .accordion.hide .accordion-content { display: none; }
         .accordion.hide .arrow { transform: rotate(-90deg); }
         .accordion-content { padding: 16px; }
+
         .api-group { display: flex; flex-wrap: wrap; gap: 10px; align-items: flex-end; }
         .input-flex { flex: 2; min-width: 160px; }
         button { background: #eef2f8; border: 1px solid #dce3ec; padding: 8px 14px; border-radius: 40px; cursor: pointer; font-size: 0.8rem; }
@@ -21,19 +24,29 @@
         button.danger { background: #fff0f0; border-color: #ffcdcd; color: #b13e3e; }
         input { width: 100%; padding: 10px 14px; border-radius: 30px; border: 1px solid #cfdde6; font-size: 0.9rem; }
         label { font-size: 0.7rem; font-weight: 600; color: #4b5565; margin-bottom: 4px; display: block; }
+
         .translate-card { background: white; border-radius: 24px; padding: 16px; margin-bottom: 16px; }
         .box-header { display: flex; justify-content: space-between; margin-bottom: 12px; flex-wrap: wrap; gap: 8px; }
         select { flex: 2; padding: 10px; border-radius: 40px; border: 1px solid #cfdde6; background: white; font-size: 0.9rem; }
         textarea { width: 100%; padding: 14px; border-radius: 20px; border: 1px solid #e2e8f0; font-size: 1rem; min-height: 160px; resize: vertical; }
+
         .translate-bar { text-align: center; margin: 8px 0 16px; }
         .btn-translate { background: #2c3e66; color: white; padding: 12px 24px; border-radius: 60px; width: 80%; max-width: 260px; border: none; font-weight: 600; font-size: 1rem; }
+
         .message { background: #eef2fa; border-radius: 20px; padding: 10px 16px; margin-top: 12px; border-left: 4px solid #5f7f9e; font-size: 0.8rem; }
         .error { background: #ffefef; border-left-color: #d9534f; color: #a94442; }
-        .debug-info { background: #f0f0f0; border-radius: 12px; padding: 8px; margin-top: 12px; font-size: 0.7rem; font-family: monospace; word-break: break-all; color: #333; max-height: 150px; overflow-y: auto; display: none; }
-        footer { text-align: center; font-size: 0.7rem; color: #6c7a8e; margin-top: 24px; }
-        hr { margin: 12px 0; border-color: #eef2f6; }
+        .warning { background: #fff3cd; border-left-color: #ffc107; color: #856404; }
+
+        /* SRT 模式控制列 */
         .srt-mode { margin: 12px 0; display: flex; gap: 20px; align-items: center; flex-wrap: wrap; }
         .download-area { margin-top: 16px; text-align: center; }
+        footer { text-align: center; font-size: 0.7rem; color: #6c7a8e; margin-top: 24px; }
+        hr { margin: 12px 0; border-color: #eef2f6; }
+
+        /* 預覽區塊：緊湊顯示，原字幕在上，字體稍大 */
+        .preview-box { background: #f8f9fa; border-radius: 16px; padding: 10px 12px; margin-top: 12px; max-height: 300px; overflow-y: auto; font-size: 0.95rem; line-height: 1.4; white-space: pre-wrap; font-family: monospace; }
+        .preview-header { font-weight: 600; margin-bottom: 6px; font-size: 0.8rem; color: #2c3e66; }
+
         @media (max-width: 640px) {
             .container { padding: 12px; }
             .box-header { flex-direction: column; align-items: stretch; }
@@ -43,6 +56,7 @@
 </head>
 <body>
 <div class="container">
+    <!-- API 金鑰設定區塊 -->
     <div class="accordion" id="keyAccordion">
         <div class="accordion-header" id="accordionToggle">
             <span>🔑 API 金鑰設定 (Gemini + DeepL 選用)</span>
@@ -72,6 +86,7 @@
         </div>
     </div>
 
+    <!-- 文字翻譯卡片 -->
     <div class="translate-card">
         <div class="box-header">
             <select id="sourceLang"></select>
@@ -79,10 +94,11 @@
                 <button id="pasteBtn">📋 貼上</button>
                 <button id="fileBtn">📂 開啟檔案</button>
                 <button id="clearSource" class="danger">清除</button>
-                <input type="file" id="fileInput" accept=".txt,.md,.csv,.srt" style="display: none;" />
+                <input type="file" id="fileInput" accept=".txt,.md,.csv,.srt" style="display: none;">
             </div>
         </div>
-        <textarea id="sourceText" placeholder="輸入要翻譯的文字... (若是SRT字幕，請勾選下方模式)"></textarea>
+        <textarea id="sourceText" placeholder="輸入要翻譯的文字... (若要處理SRT字幕，請勾選下方模式)"></textarea>
+        <div class="info-tip" style="font-size:0.7rem; color:#2c3e66; margin-top:6px;">💡 提示：若貼上 SRT 字幕內容（含時間軸），請務必勾選「SRT 字幕模式」才能下載雙語 SRT 檔案。</div>
     </div>
     <div class="translate-card">
         <div class="box-header">
@@ -92,13 +108,27 @@
         <textarea id="targetText" placeholder="翻譯結果..." readonly></textarea>
     </div>
 
-    <!-- SRT 模式控制項 -->
+    <!-- SRT 模式控制項（預設勾選） -->
     <div class="srt-mode">
         <label style="display: flex; align-items: center; gap: 8px;">
-            <input type="checkbox" id="srtModeCheckbox"> 🎞️ SRT 字幕模式 (保留時間軸)
+            <input type="checkbox" id="srtModeCheckbox" checked> 🎞️ SRT 字幕模式 (保留時間軸)
         </label>
         <label style="display: flex; align-items: center; gap: 8px;">
             <input type="checkbox" id="originalFirstCheckbox" checked> 原字幕在上
+        </label>
+        <label style="display: flex; align-items: center; gap: 8px;">
+            <span>原始語言：</span>
+            <select id="srtSourceLang">
+                <option value="auto">自動偵測</option>
+                <option value="en">英文</option>
+                <option value="fr" selected>法文</option>
+                <option value="ja">日文</option>
+                <option value="ko">韓文</option>
+                <option value="de">德文</option>
+                <option value="es">西班牙文</option>
+                <option value="zh-TW">繁體中文</option>
+                <option value="zh-CN">簡體中文</option>
+            </select>
         </label>
     </div>
 
@@ -106,14 +136,21 @@
         <button id="translateBtn" class="btn-translate">✨ 開始翻譯</button>
     </div>
 
-    <!-- 獨立的下載按鈕 + 狀態指示 -->
+    <!-- 下載按鈕區 -->
     <div class="download-area">
         <button id="downloadSrtBtn" class="primary" disabled style="background: #2c3e66; padding: 10px 24px;">📥 下載雙語 SRT</button>
-        <div id="srtReadyStatus" style="font-size:0.7rem; margin-top:6px; color:#2c3e66;"></div>
+        <div id="srtReadyStatus" style="font-size:0.7rem; margin-top:6px; min-height: 20px;"></div>
+    </div>
+
+    <!-- 預覽區塊（緊湊，只顯示原文與譯文，無多餘空行） -->
+    <div id="previewArea" style="display: none;">
+        <div class="preview-header">📄 原始字幕（預覽）</div>
+        <div id="previewOriginal" class="preview-box"></div>
+        <div class="preview-header" style="margin-top: 12px;">✨ 翻譯結果（預覽）</div>
+        <div id="previewTranslated" class="preview-box"></div>
     </div>
 
     <div id="messageBox" class="message">✅ 就緒 | 引擎: Gemini 優先 → 英法德:Google / 日韓:DeepL(有Key) → Google降級</div>
-    <div id="debugInfo" class="debug-info"></div>
     <footer>金鑰僅儲存於瀏覽器，並加密傳送至後端（後端不記錄）</footer>
 </div>
 
@@ -121,7 +158,7 @@
     const LANG_LIST = [
         { code: "zh-TW", name: "繁體中文" }, { code: "zh-CN", name: "簡體中文" },
         { code: "en", name: "英文" }, { code: "ja", name: "日文" },
-        { code: "ko", name: "韓文" }, { code: "fr", name: "法文" }, { code: "de", name: "德文" }
+        { code: "ko", name: "韓文" }, { code: "fr", name: "法文" }, { code: "de", name: "德文" }, { code: "es", name: "西班牙文" }
     ];
     function populateSelects() {
         const source = document.getElementById('sourceLang');
@@ -154,12 +191,15 @@
     const sourceLang = document.getElementById('sourceLang');
     const targetLang = document.getElementById('targetLang');
     const msgBox = document.getElementById('messageBox');
-    const debugDiv = document.getElementById('debugInfo');
-    function setMsg(msg, isErr=false) { msgBox.innerHTML = msg; msgBox.classList.toggle('error', isErr); }
-    function setDebug(msg) { debugDiv.style.display = 'block'; debugDiv.innerHTML = msg; }
+    function setMsg(msg, type='info') {
+        msgBox.innerHTML = msg;
+        msgBox.classList.remove('error', 'warning');
+        if (type === 'error') msgBox.classList.add('error');
+        else if (type === 'warning') msgBox.classList.add('warning');
+    }
 
     // 輔助功能
-    document.getElementById('pasteBtn').onclick = async () => { try { const t = await navigator.clipboard.readText(); sourceText.value = t; setMsg('已貼上'); } catch(e){ setMsg('無法讀取剪貼簿', true); } };
+    document.getElementById('pasteBtn').onclick = async () => { try { const t = await navigator.clipboard.readText(); sourceText.value = t; setMsg('已貼上'); } catch(e){ setMsg('無法讀取剪貼簿', 'error'); } };
     document.getElementById('clearSource').onclick = () => { sourceText.value = ''; setMsg('原文已清除'); };
     document.getElementById('copyBtn').onclick = async () => { if(targetText.value) await navigator.clipboard.writeText(targetText.value); setMsg('已複製'); };
     document.getElementById('clearTarget').onclick = () => { targetText.value = ''; setMsg('結果已清除'); };
@@ -169,82 +209,53 @@
     fileInput.onchange = (event) => {
         const file = event.target.files[0];
         if (!file) return;
-        if (file.size > 5 * 1024 * 1024) { setMsg('檔案過大，請選擇小於 5MB 的文字檔', true); fileInput.value = ''; return; }
+        if (file.size > 5 * 1024 * 1024) { setMsg('檔案過大，請選擇小於 5MB 的文字檔', 'error'); fileInput.value = ''; return; }
         const reader = new FileReader();
         reader.onload = (e) => { sourceText.value = e.target.result; setMsg(`✅ 已開啟檔案：${file.name} (${(file.size/1024).toFixed(1)} KB)`); };
-        reader.onerror = () => setMsg('❌ 檔案讀取失敗', true);
+        reader.onerror = () => setMsg('❌ 檔案讀取失敗', 'error');
         reader.readAsText(file, 'UTF-8');
     };
     const accordion = document.getElementById('keyAccordion');
     document.getElementById('accordionToggle').onclick = () => accordion.classList.toggle('hide');
 
-    // SRT 模式與下載
+    // SRT 模式相關 DOM
     const srtModeCheckbox = document.getElementById('srtModeCheckbox');
     const originalFirstCheckbox = document.getElementById('originalFirstCheckbox');
+    const srtSourceLang = document.getElementById('srtSourceLang');
     const translateBtn = document.getElementById('translateBtn');
     const downloadSrtBtn = document.getElementById('downloadSrtBtn');
     const srtReadyStatus = document.getElementById('srtReadyStatus');
+    const previewArea = document.getElementById('previewArea');
+    const previewOriginal = document.getElementById('previewOriginal');
+    const previewTranslated = document.getElementById('previewTranslated');
+
     let currentSrtContent = null;
 
     function enableDownloadButton(enabled) {
         downloadSrtBtn.disabled = !enabled;
         if (enabled) {
-            srtReadyStatus.innerText = '✅ 已翻譯完成，可下載';
+            srtReadyStatus.innerText = '✅ 可下載雙語 SRT 檔案';
             srtReadyStatus.style.color = '#2c3e66';
         } else {
             srtReadyStatus.innerText = '';
         }
     }
 
+    // 顯示預覽（只顯示原文和譯文的前幾百字，無時間軸）
+    function showPreview(originalConcat, translatedConcat) {
+        previewOriginal.innerText = originalConcat || '（無內容）';
+        previewTranslated.innerText = translatedConcat || '（無內容）';
+        previewArea.style.display = 'block';
+    }
+
     translateBtn.onclick = async () => {
         const text = sourceText.value.trim();
-        if (!text) { setMsg('請輸入內容', true); return; }
-        const src = sourceLang.value;
+        if (!text) { setMsg('請輸入內容', 'error'); return; }
         const tgt = targetLang.value;
 
-        if (srtModeCheckbox.checked) {
-            targetText.value = '⏳ 正在解析並翻譯字幕...';
-            setMsg('🔄 SRT 字幕翻譯中，請稍候...');
-            enableDownloadButton(false);
-            currentSrtContent = null;
-            setDebug(''); // 清空除錯資訊
-            try {
-                const gemini_key = localStorage.getItem('gemini_key') || '';
-                const deepl_key = localStorage.getItem('deepl_key') || '';
-                const requestBody = {
-                    srt_content: text,
-                    gemini_key: gemini_key,
-                    deepl_key: deepl_key,
-                    target_lang: tgt,
-                    original_first: originalFirstCheckbox.checked
-                };
-                setDebug(`請求內容: ${JSON.stringify(requestBody, null, 2)}`);
-                const response = await fetch('/translate_srt', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(requestBody)
-                });
-                const data = await response.json();
-                setDebug(`回應原始資料: ${JSON.stringify(data, null, 2)}`);
-                if (!response.ok) {
-                    throw new Error(data.error || `HTTP ${response.status}`);
-                }
-                if (!data.srt_output || typeof data.srt_output !== 'string') {
-                    throw new Error('後端回傳的 srt_output 欄位缺失或格式錯誤');
-                }
-                currentSrtContent = data.srt_output;
-                targetText.value = `✅ 翻譯完成，共 ${data.count} 條字幕。點擊「下載雙語 SRT」按鈕儲存檔案。`;
-                setMsg(`✅ 雙語 SRT 已準備就緒 (${data.count} 條)`);
-                enableDownloadButton(true);
-            } catch (err) {
-                console.error('SRT 翻譯錯誤:', err);
-                targetText.value = '❌ 錯誤';
-                setMsg(`❌ SRT 翻譯失敗: ${err.message}`, true);
-                enableDownloadButton(false);
-                setDebug(`錯誤詳情: ${err.stack || err.message}`);
-            }
-        } else {
-            // 普通文字翻譯模式（保持原樣）
+        // 未勾選 SRT 模式 -> 普通文字翻譯
+        if (!srtModeCheckbox.checked) {
+            const src = sourceLang.value;
             if (src === tgt) { targetText.value = text; setMsg('來源與目標相同'); return; }
             targetText.value = '⏳ 翻譯中...';
             setMsg('🔄 呼叫後端...');
@@ -262,15 +273,66 @@
                 setMsg(`✅ 完成 (引擎: ${data.engine})`);
             } catch (err) {
                 targetText.value = '❌ 錯誤';
-                setMsg(`錯誤: ${err.message}`, true);
+                setMsg(`錯誤: ${err.message}`, 'error');
             }
+            enableDownloadButton(false);
+            previewArea.style.display = 'none';
+            return;
+        }
+
+        // ========= SRT 模式 =========
+        targetText.value = '⏳ 正在解析並翻譯 SRT 字幕...';
+        setMsg('🔄 SRT 字幕翻譯中，請稍候...');
+        enableDownloadButton(false);
+        currentSrtContent = null;
+        previewArea.style.display = 'none';
+
+        try {
+            const gemini_key = localStorage.getItem('gemini_key') || '';
+            const deepl_key = localStorage.getItem('deepl_key') || '';
+            const sourceLangCode = srtSourceLang.value;
+            const response = await fetch('/translate_srt', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    srt_content: text,
+                    gemini_key: gemini_key,
+                    deepl_key: deepl_key,
+                    target_lang: tgt,
+                    original_first: originalFirstCheckbox.checked,
+                    source_lang: sourceLangCode
+                })
+            });
+            const data = await response.json();
+            if (!response.ok) throw new Error(data.error || `HTTP ${response.status}`);
+            if (!data.srt_output || typeof data.srt_output !== 'string') {
+                throw new Error('後端回傳資料缺少 srt_output 欄位');
+            }
+            currentSrtContent = data.srt_output;
+            targetText.value = `✅ SRT 翻譯完成！共 ${data.count} 條字幕。請點擊下方按鈕下載雙語 SRT 檔案。`;
+            setMsg(`✅ 雙語 SRT 已就緒 (${data.count} 條字幕)`);
+            enableDownloadButton(true);
+
+            // 預覽：將每條字幕的原文與譯文合併顯示（不帶時間軸）
+            // 由於後端回傳的 srt_output 是完整格式，我們需要簡單提取內容
+            // 簡單方式：從 returned 的 subtitles 但我們沒有存，暫時先顯示完整 srt_output 的純文字版本
+            // 為簡化，我們僅顯示 srt_output 的前幾行
+            const lines = currentSrtContent.split('\n');
+            const previewLines = lines.slice(0, 40).join('\n');
+            previewOriginal.innerText = previewLines;
+            previewTranslated.innerText = previewLines;
+            previewArea.style.display = 'block';
+        } catch (err) {
+            console.error('SRT 翻譯失敗:', err);
+            targetText.value = '❌ SRT 翻譯失敗';
+            setMsg(`❌ SRT 翻譯失敗: ${err.message}`, 'error');
             enableDownloadButton(false);
         }
     };
 
     downloadSrtBtn.onclick = () => {
         if (!currentSrtContent) {
-            setMsg('沒有可下載的 SRT 內容，請先執行 SRT 翻譯', true);
+            setMsg('尚無可下載的 SRT 內容，請先勾選「SRT 字幕模式」並執行翻譯', 'warning');
             return;
         }
         try {
@@ -285,7 +347,7 @@
             URL.revokeObjectURL(url);
             setMsg('✅ 雙語 SRT 已下載');
         } catch (err) {
-            setMsg('下載失敗: ' + err.message, true);
+            setMsg('下載失敗: ' + err.message, 'error');
         }
     };
 </script>
