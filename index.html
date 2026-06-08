@@ -37,13 +37,13 @@
         .error { background: #ffefef; border-left-color: #d9534f; color: #a94442; }
         .warning { background: #fff3cd; border-left-color: #ffc107; color: #856404; }
 
-        /* SRT 模式控制列 */
+        /* SRT 模式控制列 - 只保留兩個核取方塊 */
         .srt-mode { margin: 12px 0; display: flex; gap: 20px; align-items: center; flex-wrap: wrap; }
         .download-area { margin-top: 16px; text-align: center; }
         footer { text-align: center; font-size: 0.7rem; color: #6c7a8e; margin-top: 24px; }
         hr { margin: 12px 0; border-color: #eef2f6; }
 
-        /* 預覽區塊：緊湊顯示，原字幕在上，字體稍大 */
+        /* 預覽區塊：緊湊顯示，字體稍大，減少垂直空白 */
         .preview-box { background: #f8f9fa; border-radius: 16px; padding: 10px 12px; margin-top: 12px; max-height: 300px; overflow-y: auto; font-size: 0.95rem; line-height: 1.4; white-space: pre-wrap; font-family: monospace; }
         .preview-header { font-weight: 600; margin-bottom: 6px; font-size: 0.8rem; color: #2c3e66; }
 
@@ -86,7 +86,7 @@
         </div>
     </div>
 
-    <!-- 文字翻譯卡片 -->
+    <!-- 文字翻譯卡片（含來源/目標語言選擇） -->
     <div class="translate-card">
         <div class="box-header">
             <select id="sourceLang"></select>
@@ -108,27 +108,13 @@
         <textarea id="targetText" placeholder="翻譯結果..." readonly></textarea>
     </div>
 
-    <!-- SRT 模式控制項（預設勾選） -->
+    <!-- SRT 模式控制項：僅保留兩個核取方塊 -->
     <div class="srt-mode">
         <label style="display: flex; align-items: center; gap: 8px;">
             <input type="checkbox" id="srtModeCheckbox" checked> 🎞️ SRT 字幕模式 (保留時間軸)
         </label>
         <label style="display: flex; align-items: center; gap: 8px;">
             <input type="checkbox" id="originalFirstCheckbox" checked> 原字幕在上
-        </label>
-        <label style="display: flex; align-items: center; gap: 8px;">
-            <span>原始語言：</span>
-            <select id="srtSourceLang">
-                <option value="auto">自動偵測</option>
-                <option value="en">英文</option>
-                <option value="fr" selected>法文</option>
-                <option value="ja">日文</option>
-                <option value="ko">韓文</option>
-                <option value="de">德文</option>
-                <option value="es">西班牙文</option>
-                <option value="zh-TW">繁體中文</option>
-                <option value="zh-CN">簡體中文</option>
-            </select>
         </label>
     </div>
 
@@ -142,7 +128,7 @@
         <div id="srtReadyStatus" style="font-size:0.7rem; margin-top:6px; min-height: 20px;"></div>
     </div>
 
-    <!-- 預覽區塊（緊湊，只顯示原文與譯文，無多餘空行） -->
+    <!-- 預覽區塊 -->
     <div id="previewArea" style="display: none;">
         <div class="preview-header">📄 原始字幕（預覽）</div>
         <div id="previewOriginal" class="preview-box"></div>
@@ -218,10 +204,9 @@
     const accordion = document.getElementById('keyAccordion');
     document.getElementById('accordionToggle').onclick = () => accordion.classList.toggle('hide');
 
-    // SRT 模式相關 DOM
+    // SRT 模式相關
     const srtModeCheckbox = document.getElementById('srtModeCheckbox');
     const originalFirstCheckbox = document.getElementById('originalFirstCheckbox');
-    const srtSourceLang = document.getElementById('srtSourceLang');
     const translateBtn = document.getElementById('translateBtn');
     const downloadSrtBtn = document.getElementById('downloadSrtBtn');
     const srtReadyStatus = document.getElementById('srtReadyStatus');
@@ -241,7 +226,6 @@
         }
     }
 
-    // 顯示預覽（只顯示原文和譯文的前幾百字，無時間軸）
     function showPreview(originalConcat, translatedConcat) {
         previewOriginal.innerText = originalConcat || '（無內容）';
         previewTranslated.innerText = translatedConcat || '（無內容）';
@@ -280,7 +264,7 @@
             return;
         }
 
-        // ========= SRT 模式 =========
+        // ========= SRT 模式：使用頂部的來源語言作為原始語言 =========
         targetText.value = '⏳ 正在解析並翻譯 SRT 字幕...';
         setMsg('🔄 SRT 字幕翻譯中，請稍候...');
         enableDownloadButton(false);
@@ -290,7 +274,7 @@
         try {
             const gemini_key = localStorage.getItem('gemini_key') || '';
             const deepl_key = localStorage.getItem('deepl_key') || '';
-            const sourceLangCode = srtSourceLang.value;
+            const srcLang = sourceLang.value;   // 直接使用頂部選擇的來源語言
             const response = await fetch('/translate_srt', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -300,7 +284,7 @@
                     deepl_key: deepl_key,
                     target_lang: tgt,
                     original_first: originalFirstCheckbox.checked,
-                    source_lang: sourceLangCode
+                    source_lang: srcLang
                 })
             });
             const data = await response.json();
@@ -313,10 +297,7 @@
             setMsg(`✅ 雙語 SRT 已就緒 (${data.count} 條字幕)`);
             enableDownloadButton(true);
 
-            // 預覽：將每條字幕的原文與譯文合併顯示（不帶時間軸）
-            // 由於後端回傳的 srt_output 是完整格式，我們需要簡單提取內容
-            // 簡單方式：從 returned 的 subtitles 但我們沒有存，暫時先顯示完整 srt_output 的純文字版本
-            // 為簡化，我們僅顯示 srt_output 的前幾行
+            // 預覽：顯示完整 srt_output 的前幾行（因 srt_output 包含時間軸）
             const lines = currentSrtContent.split('\n');
             const previewLines = lines.slice(0, 40).join('\n');
             previewOriginal.innerText = previewLines;
