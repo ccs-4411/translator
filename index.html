@@ -106,7 +106,7 @@
         <button id="translateBtn" class="btn-translate">✨ 開始翻譯</button>
     </div>
 
-    <!-- 獨立的雙語下載按鈕 -->
+    <!-- 獨立的下載按鈕 -->
     <div class="download-area">
         <button id="downloadSrtBtn" class="primary" disabled style="background: #2c3e66; padding: 10px 24px;">📥 下載雙語 SRT</button>
     </div>
@@ -174,12 +174,12 @@
     const accordion = document.getElementById('keyAccordion');
     document.getElementById('accordionToggle').onclick = () => accordion.classList.toggle('hide');
 
-    // SRT 相關變數
+    // SRT 模式與下載
     const srtModeCheckbox = document.getElementById('srtModeCheckbox');
     const originalFirstCheckbox = document.getElementById('originalFirstCheckbox');
     const translateBtn = document.getElementById('translateBtn');
     const downloadSrtBtn = document.getElementById('downloadSrtBtn');
-    let currentSrtContent = null;   // 儲存最新翻譯的 SRT 內容
+    let currentSrtContent = null;
 
     translateBtn.onclick = async () => {
         const text = sourceText.value.trim();
@@ -188,7 +188,6 @@
         const tgt = targetLang.value;
 
         if (srtModeCheckbox.checked) {
-            // SRT 模式
             targetText.value = '⏳ 正在解析並翻譯字幕...';
             setMsg('🔄 SRT 字幕翻譯中，請稍候...');
             downloadSrtBtn.disabled = true;
@@ -219,7 +218,7 @@
                 downloadSrtBtn.disabled = true;
             }
         } else {
-            // 普通文字翻譯模式
+            // 普通文字翻譯
             if (src === tgt) { targetText.value = text; setMsg('來源與目標相同'); return; }
             targetText.value = '⏳ 翻譯中...';
             setMsg('🔄 呼叫後端...');
@@ -242,7 +241,6 @@
         }
     };
 
-    // 下載按鈕事件
     downloadSrtBtn.onclick = () => {
         if (!currentSrtContent) {
             setMsg('沒有可下載的 SRT 內容，請先執行 SRT 翻譯', true);
