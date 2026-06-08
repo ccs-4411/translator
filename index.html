@@ -8,45 +8,34 @@
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body { background: #f5f7fb; font-family: system-ui, sans-serif; padding: 0; }
         .container { max-width: 800px; margin: 0 auto; padding: 16px; }
-
-        /* 折疊面板 */
         .accordion { background: white; border-radius: 24px; margin-bottom: 20px; overflow: hidden; box-shadow: 0 2px 8px rgba(0,0,0,0.05); }
         .accordion-header { background: #fff; padding: 14px 18px; cursor: pointer; font-weight: 600; display: flex; justify-content: space-between; border-bottom: 1px solid #eef2f6; }
         .accordion-header .arrow { transition: transform 0.3s; }
         .accordion.hide .accordion-content { display: none; }
         .accordion.hide .arrow { transform: rotate(-90deg); }
         .accordion-content { padding: 16px; }
-
         .api-group { display: flex; flex-wrap: wrap; gap: 10px; align-items: flex-end; }
         .input-flex { flex: 2; min-width: 160px; }
         button { background: #eef2f8; border: 1px solid #dce3ec; padding: 8px 14px; border-radius: 40px; cursor: pointer; font-size: 0.8rem; }
         button.primary { background: #2c3e66; color: white; border: none; }
         button.danger { background: #fff0f0; border-color: #ffcdcd; color: #b13e3e; }
-        input { width: 100%; padding: 10px 14px; border-radius: 30px; border: 1px solid #cfdde6; font-size: 0.9rem; }
+        input, select { width: 100%; padding: 10px 14px; border-radius: 30px; border: 1px solid #cfdde6; font-size: 0.9rem; }
         label { font-size: 0.7rem; font-weight: 600; color: #4b5565; margin-bottom: 4px; display: block; }
-
         .translate-card { background: white; border-radius: 24px; padding: 16px; margin-bottom: 16px; }
         .box-header { display: flex; justify-content: space-between; margin-bottom: 12px; flex-wrap: wrap; gap: 8px; }
-        select { flex: 2; padding: 10px; border-radius: 40px; border: 1px solid #cfdde6; background: white; font-size: 0.9rem; }
+        select { flex: 2; }
         textarea { width: 100%; padding: 14px; border-radius: 20px; border: 1px solid #e2e8f0; font-size: 1rem; min-height: 160px; resize: vertical; }
-
         .translate-bar { text-align: center; margin: 8px 0 16px; }
         .btn-translate { background: #2c3e66; color: white; padding: 12px 24px; border-radius: 60px; width: 80%; max-width: 260px; border: none; font-weight: 600; font-size: 1rem; }
-
         .message { background: #eef2fa; border-radius: 20px; padding: 10px 16px; margin-top: 12px; border-left: 4px solid #5f7f9e; font-size: 0.8rem; }
         .error { background: #ffefef; border-left-color: #d9534f; color: #a94442; }
         .warning { background: #fff3cd; border-left-color: #ffc107; color: #856404; }
-
-        /* SRT 模式控制列 - 只保留兩個核取方塊 */
         .srt-mode { margin: 12px 0; display: flex; gap: 20px; align-items: center; flex-wrap: wrap; }
         .download-area { margin-top: 16px; text-align: center; }
         footer { text-align: center; font-size: 0.7rem; color: #6c7a8e; margin-top: 24px; }
-        hr { margin: 12px 0; border-color: #eef2f6; }
-
-        /* 預覽區塊：緊湊顯示，字體稍大，減少垂直空白 */
+        hr { margin: 12px 0; }
         .preview-box { background: #f8f9fa; border-radius: 16px; padding: 10px 12px; margin-top: 12px; max-height: 300px; overflow-y: auto; font-size: 0.95rem; line-height: 1.4; white-space: pre-wrap; font-family: monospace; }
         .preview-header { font-weight: 600; margin-bottom: 6px; font-size: 0.8rem; color: #2c3e66; }
-
         @media (max-width: 640px) {
             .container { padding: 12px; }
             .box-header { flex-direction: column; align-items: stretch; }
@@ -56,7 +45,6 @@
 </head>
 <body>
 <div class="container">
-    <!-- API 金鑰設定區塊 -->
     <div class="accordion" id="keyAccordion">
         <div class="accordion-header" id="accordionToggle">
             <span>🔑 API 金鑰設定 (Gemini + DeepL 選用)</span>
@@ -64,7 +52,7 @@
         </div>
         <div class="accordion-content">
             <div style="margin-bottom: 20px;">
-                <label>✨ Google Gemini API Key (2.5 Flash / 1.5 Flash)</label>
+                <label>✨ Google Gemini API Key</label>
                 <div class="api-group">
                     <div class="input-flex"><input type="password" id="geminiKey" placeholder="輸入 Gemini Key"></div>
                     <button id="saveGemini" class="primary">💾 儲存</button>
@@ -74,7 +62,7 @@
             </div>
             <hr>
             <div>
-                <label>🌐 DeepL API Key (選填，日韓優先)</label>
+                <label>🌐 DeepL API Key (選填)</label>
                 <div class="api-group">
                     <div class="input-flex"><input type="password" id="deeplKey" placeholder="輸入 DeepL Key"></div>
                     <button id="saveDeepl" class="primary">💾 儲存</button>
@@ -82,11 +70,10 @@
                 </div>
                 <div id="deeplStatus" style="font-size:0.7rem; margin-top:6px;"></div>
             </div>
-            <div class="message" style="margin-top: 12px;">💡 策略：Gemini優先 → 英法德用Google；日韓有DeepL Key優先，無或失敗自動Google</div>
+            <div class="message">💡 策略：Gemini優先 → 英法德用Google；日韓有DeepL Key優先</div>
         </div>
     </div>
 
-    <!-- 文字翻譯卡片（含來源/目標語言選擇） -->
     <div class="translate-card">
         <div class="box-header">
             <select id="sourceLang"></select>
@@ -98,7 +85,7 @@
             </div>
         </div>
         <textarea id="sourceText" placeholder="輸入要翻譯的文字... (若要處理SRT字幕，請勾選下方模式)"></textarea>
-        <div class="info-tip" style="font-size:0.7rem; color:#2c3e66; margin-top:6px;">💡 提示：若貼上 SRT 字幕內容（含時間軸），請務必勾選「SRT 字幕模式」才能下載雙語 SRT 檔案。</div>
+        <div style="font-size:0.7rem; color:#2c3e66; margin-top:6px;">💡 提示：若貼上 SRT 字幕內容（含時間軸），請勾選「SRT 字幕模式」並確保「來源語言」正確。</div>
     </div>
     <div class="translate-card">
         <div class="box-header">
@@ -108,31 +95,22 @@
         <textarea id="targetText" placeholder="翻譯結果..." readonly></textarea>
     </div>
 
-    <!-- SRT 模式控制項：僅保留兩個核取方塊 -->
     <div class="srt-mode">
-        <label style="display: flex; align-items: center; gap: 8px;">
-            <input type="checkbox" id="srtModeCheckbox" checked> 🎞️ SRT 字幕模式 (保留時間軸)
-        </label>
-        <label style="display: flex; align-items: center; gap: 8px;">
-            <input type="checkbox" id="originalFirstCheckbox" checked> 原字幕在上
-        </label>
+        <label><input type="checkbox" id="srtModeCheckbox" checked> 🎞️ SRT 字幕模式 (保留時間軸)</label>
+        <label><input type="checkbox" id="originalFirstCheckbox" checked> 原字幕在上</label>
     </div>
 
-    <div class="translate-bar">
-        <button id="translateBtn" class="btn-translate">✨ 開始翻譯</button>
-    </div>
+    <div class="translate-bar"><button id="translateBtn" class="btn-translate">✨ 開始翻譯</button></div>
 
-    <!-- 下載按鈕區 -->
     <div class="download-area">
-        <button id="downloadSrtBtn" class="primary" disabled style="background: #2c3e66; padding: 10px 24px;">📥 下載雙語 SRT</button>
-        <div id="srtReadyStatus" style="font-size:0.7rem; margin-top:6px; min-height: 20px;"></div>
+        <button id="downloadSrtBtn" class="primary" disabled>📥 下載雙語 SRT</button>
+        <div id="srtReadyStatus" style="font-size:0.7rem; margin-top:6px;"></div>
     </div>
 
-    <!-- 預覽區塊 -->
     <div id="previewArea" style="display: none;">
         <div class="preview-header">📄 原始字幕（預覽）</div>
         <div id="previewOriginal" class="preview-box"></div>
-        <div class="preview-header" style="margin-top: 12px;">✨ 翻譯結果（預覽）</div>
+        <div class="preview-header">✨ 翻譯結果（預覽）</div>
         <div id="previewTranslated" class="preview-box"></div>
     </div>
 
@@ -204,7 +182,7 @@
     const accordion = document.getElementById('keyAccordion');
     document.getElementById('accordionToggle').onclick = () => accordion.classList.toggle('hide');
 
-    // SRT 模式相關
+    // SRT 模式
     const srtModeCheckbox = document.getElementById('srtModeCheckbox');
     const originalFirstCheckbox = document.getElementById('originalFirstCheckbox');
     const translateBtn = document.getElementById('translateBtn');
@@ -213,7 +191,6 @@
     const previewArea = document.getElementById('previewArea');
     const previewOriginal = document.getElementById('previewOriginal');
     const previewTranslated = document.getElementById('previewTranslated');
-
     let currentSrtContent = null;
 
     function enableDownloadButton(enabled) {
@@ -226,19 +203,13 @@
         }
     }
 
-    function showPreview(originalConcat, translatedConcat) {
-        previewOriginal.innerText = originalConcat || '（無內容）';
-        previewTranslated.innerText = translatedConcat || '（無內容）';
-        previewArea.style.display = 'block';
-    }
-
     translateBtn.onclick = async () => {
         const text = sourceText.value.trim();
         if (!text) { setMsg('請輸入內容', 'error'); return; }
         const tgt = targetLang.value;
 
-        // 未勾選 SRT 模式 -> 普通文字翻譯
         if (!srtModeCheckbox.checked) {
+            // 普通文字翻譯
             const src = sourceLang.value;
             if (src === tgt) { targetText.value = text; setMsg('來源與目標相同'); return; }
             targetText.value = '⏳ 翻譯中...';
@@ -264,7 +235,7 @@
             return;
         }
 
-        // ========= SRT 模式：使用頂部的來源語言作為原始語言 =========
+        // SRT 模式
         targetText.value = '⏳ 正在解析並翻譯 SRT 字幕...';
         setMsg('🔄 SRT 字幕翻譯中，請稍候...');
         enableDownloadButton(false);
@@ -274,7 +245,7 @@
         try {
             const gemini_key = localStorage.getItem('gemini_key') || '';
             const deepl_key = localStorage.getItem('deepl_key') || '';
-            const srcLang = sourceLang.value;   // 直接使用頂部選擇的來源語言
+            const srcLang = sourceLang.value;
             const response = await fetch('/translate_srt', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -287,7 +258,17 @@
                     source_lang: srcLang
                 })
             });
-            const data = await response.json();
+
+            // 先尝试获取文本，以防 JSON 解析失败
+            const responseText = await response.text();
+            let data;
+            try {
+                data = JSON.parse(responseText);
+            } catch (jsonErr) {
+                console.error('回應不是 JSON:', responseText);
+                throw new Error(`後端回應不是 JSON，可能是伺服器錯誤。回應內容: ${responseText.substring(0, 200)}`);
+            }
+
             if (!response.ok) throw new Error(data.error || `HTTP ${response.status}`);
             if (!data.srt_output || typeof data.srt_output !== 'string') {
                 throw new Error('後端回傳資料缺少 srt_output 欄位');
@@ -297,7 +278,6 @@
             setMsg(`✅ 雙語 SRT 已就緒 (${data.count} 條字幕)`);
             enableDownloadButton(true);
 
-            // 預覽：顯示完整 srt_output 的前幾行（因 srt_output 包含時間軸）
             const lines = currentSrtContent.split('\n');
             const previewLines = lines.slice(0, 40).join('\n');
             previewOriginal.innerText = previewLines;
