@@ -41,7 +41,7 @@
 </head>
 <body>
 <div class="container">
-    <!-- API 金鑰設定（可收合） -->
+    <!-- API 金鑰設定（可折疊） -->
     <div class="accordion" id="keyAccordion">
         <div class="accordion-header" id="accordionToggle">
             <span>🔑 API 金鑰設定 (Gemini + DeepL 選用)</span>
@@ -49,7 +49,7 @@
         </div>
         <div class="accordion-content">
             <div style="margin-bottom: 20px;">
-                <label>✨ Google Gemini API Key (2.5 Flash / 1.5 Flash)</label>
+                <label>✨ Google Gemini API Key</label>
                 <div class="api-group">
                     <div class="input-flex"><input type="password" id="geminiKey" placeholder="輸入 Gemini Key"></div>
                     <button id="saveGemini" class="primary">💾 儲存</button>
@@ -67,11 +67,11 @@
                 </div>
                 <div id="deeplStatus" style="font-size:0.7rem; margin-top:6px;"></div>
             </div>
-            <div class="message" style="margin-top: 12px; background:#eef2fa;">💡 策略：Gemini優先 → 英法德用Google；日韓有DeepL Key優先，無或失敗自動Google</div>
+            <div class="message" style="margin-top: 12px;">💡 策略：Gemini優先 → 英法德用Google；日韓有DeepL Key優先，無或失敗自動Google</div>
         </div>
     </div>
 
-    <!-- 文字翻譯卡片 -->
+    <!-- 原有文字翻譯區塊 -->
     <div class="translate-card">
         <div class="box-header">
             <select id="sourceLang"></select>
@@ -94,7 +94,7 @@
     <div class="translate-bar"><button id="translateBtn" class="btn-translate">✨ 開始翻譯</button></div>
     <div id="messageBox" class="message">✅ 就緒 | 引擎: Gemini 優先 → 英法德:Google / 日韓:DeepL(有Key) → Google降級</div>
 
-    <!-- YouTube 字幕翻譯卡片 -->
+    <!-- YouTube 字幕翻譯區塊（新增） -->
     <div class="translate-card" style="background: #fef9e6;">
         <div class="box-header">
             <span>🎬 YouTube 字幕翻譯（下載 SRT）</span>
@@ -104,7 +104,7 @@
             <input type="text" id="youtubeUrl" placeholder="貼上 YouTube 網址，例如：https://youtu.be/xxx 或 https://www.youtube.com/watch?v=xxx" style="flex: 1;">
             <button id="fetchYoutubeBtn" class="primary" style="background:#f97316;">🚀 提取並翻譯</button>
         </div>
-        <div id="youtubeStatus" class="message" style="margin-bottom: 12px;">💡 自動獲取影片字幕（優先英文），翻譯成繁體中文，可下載 SRT 字幕檔</div>
+        <div id="youtubeStatus" class="message" style="margin-bottom: 12px;">💡 自動取得影片字幕（優先英文），翻譯成繁體中文，可下載 SRT 字幕檔</div>
         <div id="youtubeProgress" style="display: none; background: #e9ecef; border-radius: 20px; padding: 8px 12px; margin-bottom: 12px; font-size: 0.8rem;"></div>
         <div style="margin-bottom: 12px;">
             <button id="toggleSubtitlesBtn" style="background: #d1d5db;">📄 顯示/隱藏字幕預覽</button>
@@ -128,7 +128,7 @@
 </div>
 
 <script>
-    // 語言列表
+    // ---------- 語言列表 ----------
     const LANG_LIST = [
         { code: "zh-TW", name: "繁體中文" }, { code: "zh-CN", name: "簡體中文" },
         { code: "en", name: "英文" }, { code: "ja", name: "日文" },
@@ -143,11 +143,12 @@
     }
     populateSelects();
 
-    // 金鑰管理 (localStorage)
+    // ---------- 金鑰 localStorage 管理 ----------
     const geminiInput = document.getElementById('geminiKey');
     const deeplInput = document.getElementById('deeplKey');
     const geminiStatus = document.getElementById('geminiStatus');
     const deeplStatus = document.getElementById('deeplStatus');
+
     function loadKeys() {
         const g = localStorage.getItem('gemini_key');
         const d = localStorage.getItem('deepl_key');
@@ -160,7 +161,7 @@
     document.getElementById('clearDeepl').onclick = () => { localStorage.removeItem('deepl_key'); deeplInput.value = ''; deeplStatus.innerText = '🧹 已清除'; };
     loadKeys();
 
-    // 文字翻譯相關
+    // ---------- 原有文字翻譯功能 ----------
     const sourceText = document.getElementById('sourceText');
     const targetText = document.getElementById('targetText');
     const sourceLang = document.getElementById('sourceLang');
@@ -189,13 +190,11 @@
             setMsg(`✅ 完成 (引擎: ${data.engine})`);
         } catch(err) { targetText.value = '❌ 錯誤'; setMsg(`錯誤: ${err.message}`, true); }
     };
-
     document.getElementById('pasteBtn').onclick = async () => { try { const t = await navigator.clipboard.readText(); sourceText.value = t; setMsg('已貼上'); } catch(e){ setMsg('無法讀取剪貼簿', true); } };
     document.getElementById('clearSource').onclick = () => { sourceText.value = ''; setMsg('原文已清除'); };
     document.getElementById('copyBtn').onclick = async () => { if(!targetText.value) return; await navigator.clipboard.writeText(targetText.value); setMsg('已複製'); };
     document.getElementById('clearTarget').onclick = () => { targetText.value = ''; setMsg('結果已清除'); };
-
-    // 檔案上傳功能
+    // 開啟檔案
     const fileBtn = document.getElementById('fileBtn');
     const fileInput = document.getElementById('fileInput');
     fileBtn.onclick = () => fileInput.click();
@@ -204,16 +203,15 @@
         if (!file) return;
         if (file.size > 5 * 1024 * 1024) { setMsg('檔案過大，請選擇小於 5MB 的文字檔', true); fileInput.value = ''; return; }
         const reader = new FileReader();
-        reader.onload = (e) => { sourceText.value = e.target.result; setMsg(`✅ 已開啟檔案：${file.name} (${(file.size/1024).toFixed(1)} KB)`, false); };
-        reader.onerror = () => { setMsg('❌ 檔案讀取失敗', true); };
+        reader.onload = (e) => { sourceText.value = e.target.result; setMsg(`✅ 已開啟檔案：${file.name} (${(file.size/1024).toFixed(1)} KB)`); };
+        reader.onerror = () => setMsg('❌ 檔案讀取失敗', true);
         reader.readAsText(file, 'UTF-8');
     };
-
-    // 收合面板
+    // 折疊面板
     const accordion = document.getElementById('keyAccordion');
     document.getElementById('accordionToggle').onclick = () => accordion.classList.toggle('hide');
 
-    // ========== YouTube 字幕翻譯功能 ==========
+    // ---------- YouTube 字幕翻譯（新增） ----------
     let currentSubtitles = [];
     const youtubeUrlInput = document.getElementById('youtubeUrl');
     const fetchYoutubeBtn = document.getElementById('fetchYoutubeBtn');
@@ -227,18 +225,10 @@
     const downloadSrtBtn = document.getElementById('downloadSrtBtn');
     const downloadBilingualSrtBtn = document.getElementById('downloadBilingualSrtBtn');
 
-    function setYoutubeMsg(msg, isErr = false) {
-        youtubeStatusDiv.innerHTML = msg;
-        youtubeStatusDiv.classList.toggle('error', isErr);
-    }
-    toggleSubtitlesBtn.onclick = () => {
-        if (subtitlesPreview.style.display === 'none') {
-            subtitlesPreview.style.display = 'block';
-            toggleSubtitlesBtn.innerText = '📄 隱藏字幕預覽';
-        } else {
-            subtitlesPreview.style.display = 'none';
-            toggleSubtitlesBtn.innerText = '📄 顯示字幕預覽';
-        }
+    function setYoutubeMsg(msg, isErr=false) { youtubeStatusDiv.innerHTML = msg; youtubeStatusDiv.classList.toggle('error', isErr); }
+    toggleSubtitlesBtn.onclick = () => { 
+        if (subtitlesPreview.style.display === 'none') { subtitlesPreview.style.display = 'block'; toggleSubtitlesBtn.innerText = '📄 隱藏字幕預覽'; }
+        else { subtitlesPreview.style.display = 'none'; toggleSubtitlesBtn.innerText = '📄 顯示字幕預覽'; }
     };
     function formatTime(seconds) {
         const hours = Math.floor(seconds / 3600);
@@ -268,10 +258,9 @@
         let srtContent = '';
         for (let i = 0; i < subtitles.length; i++) {
             const sub = subtitles[i];
-            if (!sub.original && !sub.translated) continue;
             const original = sub.original || '';
             const translated = sub.translated || '';
-            if (original.trim() === '' && translated.trim() === '') continue;
+            if (!original.trim() && !translated.trim()) continue;
             const index = i + 1;
             const startTime = formatTime(sub.start);
             const endTime = formatTime(sub.start + sub.duration);
@@ -305,7 +294,7 @@
             const response = await fetch('/process_youtube', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ url: url, gemini_key: gemini_key, deepl_key: deepl_key, target_lang: 'zh-TW' })
+                body: JSON.stringify({ url, gemini_key, deepl_key, target_lang: 'zh-TW' })
             });
             const data = await response.json();
             if (!response.ok) throw new Error(data.error || '未知錯誤');
@@ -314,7 +303,7 @@
             const translatedPreview = currentSubtitles.map(s => s.translated).join(' ').substring(0, 500) + (currentSubtitles.length > 10 ? '...' : '');
             youtubeOriginalDiv.innerText = originalPreview || '（無文字）';
             youtubeTranslatedDiv.innerText = translatedPreview || '（無文字）';
-            setYoutubeMsg(`✅ 成功獲取 ${currentSubtitles.length} 條字幕，已翻譯成繁體中文。可下載 SRT 檔案。`);
+            setYoutubeMsg(`✅ 成功取得 ${currentSubtitles.length} 條字幕，已翻譯成繁體中文。可下載 SRT 檔案。`);
             downloadSrtBtn.disabled = false;
             downloadBilingualSrtBtn.disabled = false;
         } catch (err) {
@@ -348,5 +337,4 @@
     };
 </script>
 </body>
-</html>
 </html>
