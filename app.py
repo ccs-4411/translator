@@ -5,7 +5,6 @@ from flask import Flask, request, jsonify, send_from_directory
 from flask_cors import CORS
 import logging
 
-# --- 应用配置 ---
 app = Flask(__name__, static_folder='.', static_url_path='')
 CORS(app)
 logging.basicConfig(level=logging.INFO)
@@ -192,7 +191,8 @@ def translate_srt():
     gemini_key = data.get('gemini_key', '') or ENV_GEMINI_KEY
     deepl_key = data.get('deepl_key', '') or ENV_DEEPL_KEY
     target_lang = data.get('target_lang', 'zh-TW')
-    original_first = data.get('original_first', True)   # 原字幕是否在上
+    original_first = data.get('original_first', True)
+    source_lang = data.get('source_lang', 'en')   # 可选：从请求获取源语言，默认为英文
 
     if not srt_content:
         return jsonify({"error": "请贴上 SRT 内容"}), 400
@@ -205,23 +205,30 @@ def translate_srt():
     except Exception as e:
         return jsonify({"error": f"SRT 解析失败: {str(e)}"}), 400
 
-    # 逐句翻译（源语言预设为英文，可根据需要调整）
+    # 逐句翻译，增强错误处理
     translated_subs = []
-    for sub in subtitles:
+    for idx, sub in enumerate(subtitles, 1):
         original = sub['text']
         if not original.strip():
             translated = ""
         else:
             try:
+                # 优先 Gemini，其次 Google 翻译
                 if gemini_key:
                     try:
-                        translated = translate_gemini(original, 'en', target_lang, gemini_key)
-                    except:
-                        translated = translate_google(original, 'en', target_lang)
+                        translated = translate_gemini(original, source_lang, target_lang, gemini_key)
+                        app.logger.info(f"成功使用 Gemini 翻译第 {idx} 条")
+                    except Exception as e:
+                        app.logger.warning(f"Gemini 翻译第 {idx} 条失败: {e}，改用 Google 翻译")
+                        translated = translate_google(original, source_lang, target_lang)
                 else:
-                    translated = translate_google(original, 'en', target_lang)
+                    translated = translate_google(original, source_lang, target_lang)
             except Exception as e:
-                translated = f"[翻译失败] {original}"
+                app.logger.error(f"第 {idx} 条字幕翻译失败: {e}")
+                translated = original   # 翻译失败时，将原文作为译文（保证内容不为空）
+        # 确保译文不为空
+        if not translated or not translated.strip():
+            translated = original
         translated_subs.append({
             'start': sub['start'],
             'end': sub['end'],
@@ -229,7 +236,7 @@ def translate_srt():
             'translated': translated
         })
 
-    # 生成双语 SRT 内容
+    # 生成双语 SRT
     srt_output = ""
     for i, sub in enumerate(translated_subs, 1):
         start_str = format_srt_time(sub['start'])
