@@ -3,8 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-    <link rel="apple-touch-icon" href="多語言翻譯.png">
-    <title>智慧翻譯 | 多引擎 + 雙語SRT</title>
+    <title>智慧翻譯 | 多引擎 + 雙語SRT (修復版)</title>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body { background: #f5f7fb; font-family: system-ui, sans-serif; padding: 0; }
@@ -30,6 +29,7 @@
         .btn-translate { background: #2c3e66; color: white; padding: 12px 24px; border-radius: 60px; width: 80%; max-width: 260px; border: none; font-weight: 600; font-size: 1rem; }
         .message { background: #eef2fa; border-radius: 20px; padding: 10px 16px; margin-top: 12px; border-left: 4px solid #5f7f9e; font-size: 0.8rem; }
         .error { background: #ffefef; border-left-color: #d9534f; color: #a94442; }
+        .debug-info { background: #f0f0f0; border-radius: 12px; padding: 8px; margin-top: 12px; font-size: 0.7rem; font-family: monospace; word-break: break-all; color: #333; max-height: 150px; overflow-y: auto; display: none; }
         footer { text-align: center; font-size: 0.7rem; color: #6c7a8e; margin-top: 24px; }
         hr { margin: 12px 0; border-color: #eef2f6; }
         .srt-mode { margin: 12px 0; display: flex; gap: 20px; align-items: center; flex-wrap: wrap; }
@@ -68,7 +68,7 @@
                 </div>
                 <div id="deeplStatus" style="font-size:0.7rem; margin-top:6px;"></div>
             </div>
-            <div class="message" style="margin-top: 12px; background:#eef2fa;">💡 策略：Gemini優先 → 英法德用Google；日韓有DeepL Key優先，無或失敗自動Google</div>
+            <div class="message" style="margin-top: 12px;">💡 策略：Gemini優先 → 英法德用Google；日韓有DeepL Key優先，無或失敗自動Google</div>
         </div>
     </div>
 
@@ -106,12 +106,14 @@
         <button id="translateBtn" class="btn-translate">✨ 開始翻譯</button>
     </div>
 
-    <!-- 獨立的下載按鈕 -->
+    <!-- 獨立的下載按鈕 + 狀態指示 -->
     <div class="download-area">
         <button id="downloadSrtBtn" class="primary" disabled style="background: #2c3e66; padding: 10px 24px;">📥 下載雙語 SRT</button>
+        <div id="srtReadyStatus" style="font-size:0.7rem; margin-top:6px; color:#2c3e66;"></div>
     </div>
 
     <div id="messageBox" class="message">✅ 就緒 | 引擎: Gemini 優先 → 英法德:Google / 日韓:DeepL(有Key) → Google降級</div>
+    <div id="debugInfo" class="debug-info"></div>
     <footer>金鑰僅儲存於瀏覽器，並加密傳送至後端（後端不記錄）</footer>
 </div>
 
@@ -152,7 +154,9 @@
     const sourceLang = document.getElementById('sourceLang');
     const targetLang = document.getElementById('targetLang');
     const msgBox = document.getElementById('messageBox');
+    const debugDiv = document.getElementById('debugInfo');
     function setMsg(msg, isErr=false) { msgBox.innerHTML = msg; msgBox.classList.toggle('error', isErr); }
+    function setDebug(msg) { debugDiv.style.display = 'block'; debugDiv.innerHTML = msg; }
 
     // 輔助功能
     document.getElementById('pasteBtn').onclick = async () => { try { const t = await navigator.clipboard.readText(); sourceText.value = t; setMsg('已貼上'); } catch(e){ setMsg('無法讀取剪貼簿', true); } };
@@ -179,11 +183,17 @@
     const originalFirstCheckbox = document.getElementById('originalFirstCheckbox');
     const translateBtn = document.getElementById('translateBtn');
     const downloadSrtBtn = document.getElementById('downloadSrtBtn');
+    const srtReadyStatus = document.getElementById('srtReadyStatus');
     let currentSrtContent = null;
 
-    // 輔助函數：啟用/停用下載按鈕
-    function setDownloadButtonEnabled(enabled) {
+    function enableDownloadButton(enabled) {
         downloadSrtBtn.disabled = !enabled;
+        if (enabled) {
+            srtReadyStatus.innerText = '✅ 已翻譯完成，可下載';
+            srtReadyStatus.style.color = '#2c3e66';
+        } else {
+            srtReadyStatus.innerText = '';
+        }
     }
 
     translateBtn.onclick = async () => {
@@ -193,44 +203,48 @@
         const tgt = targetLang.value;
 
         if (srtModeCheckbox.checked) {
-            // SRT 模式
             targetText.value = '⏳ 正在解析並翻譯字幕...';
             setMsg('🔄 SRT 字幕翻譯中，請稍候...');
-            setDownloadButtonEnabled(false);
+            enableDownloadButton(false);
             currentSrtContent = null;
+            setDebug(''); // 清空除錯資訊
             try {
                 const gemini_key = localStorage.getItem('gemini_key') || '';
                 const deepl_key = localStorage.getItem('deepl_key') || '';
+                const requestBody = {
+                    srt_content: text,
+                    gemini_key: gemini_key,
+                    deepl_key: deepl_key,
+                    target_lang: tgt,
+                    original_first: originalFirstCheckbox.checked
+                };
+                setDebug(`請求內容: ${JSON.stringify(requestBody, null, 2)}`);
                 const response = await fetch('/translate_srt', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        srt_content: text,
-                        gemini_key: gemini_key,
-                        deepl_key: deepl_key,
-                        target_lang: tgt,
-                        original_first: originalFirstCheckbox.checked
-                    })
+                    body: JSON.stringify(requestBody)
                 });
                 const data = await response.json();
+                setDebug(`回應原始資料: ${JSON.stringify(data, null, 2)}`);
                 if (!response.ok) {
-                    throw new Error(data.error || '伺服器錯誤');
+                    throw new Error(data.error || `HTTP ${response.status}`);
                 }
-                if (!data.srt_output) {
-                    throw new Error('後端未回傳 srt_output');
+                if (!data.srt_output || typeof data.srt_output !== 'string') {
+                    throw new Error('後端回傳的 srt_output 欄位缺失或格式錯誤');
                 }
                 currentSrtContent = data.srt_output;
                 targetText.value = `✅ 翻譯完成，共 ${data.count} 條字幕。點擊「下載雙語 SRT」按鈕儲存檔案。`;
                 setMsg(`✅ 雙語 SRT 已準備就緒 (${data.count} 條)`);
-                setDownloadButtonEnabled(true);
+                enableDownloadButton(true);
             } catch (err) {
                 console.error('SRT 翻譯錯誤:', err);
                 targetText.value = '❌ 錯誤';
                 setMsg(`❌ SRT 翻譯失敗: ${err.message}`, true);
-                setDownloadButtonEnabled(false);
+                enableDownloadButton(false);
+                setDebug(`錯誤詳情: ${err.stack || err.message}`);
             }
         } else {
-            // 普通文字翻譯模式
+            // 普通文字翻譯模式（保持原樣）
             if (src === tgt) { targetText.value = text; setMsg('來源與目標相同'); return; }
             targetText.value = '⏳ 翻譯中...';
             setMsg('🔄 呼叫後端...');
@@ -250,8 +264,7 @@
                 targetText.value = '❌ 錯誤';
                 setMsg(`錯誤: ${err.message}`, true);
             }
-            // 普通模式下停用 SRT 下載按鈕
-            setDownloadButtonEnabled(false);
+            enableDownloadButton(false);
         }
     };
 
