@@ -26,11 +26,10 @@
 
         .translate-card { background: white; border-radius: 24px; padding: 16px; margin-bottom: 16px; }
         .box-header { display: flex; justify-content: space-between; margin-bottom: 12px; flex-wrap: wrap; gap: 8px; }
-        select { flex: 2; }
+        /* 三欄布局：來源語言、行業領域、目標語言 */
+        .lang-row { display: flex; gap: 12px; margin-bottom: 12px; flex-wrap: wrap; }
+        .lang-item { flex: 1; min-width: 120px; }
         textarea { width: 100%; padding: 14px; border-radius: 20px; border: 1px solid #e2e8f0; font-size: 1rem; min-height: 160px; resize: vertical; }
-
-        .row-2cols { display: flex; gap: 12px; margin-bottom: 12px; flex-wrap: wrap; }
-        .row-2cols > div { flex: 1; }
 
         .translate-bar { text-align: center; margin: 8px 0 16px; }
         .btn-translate { background: #2c3e66; color: white; padding: 12px 24px; border-radius: 60px; width: 80%; max-width: 260px; border: none; font-weight: 600; font-size: 1rem; }
@@ -49,15 +48,14 @@
 
         @media (max-width: 640px) {
             .container { padding: 12px; }
-            .box-header { flex-direction: column; align-items: stretch; }
-            select { width: 100%; }
-            .row-2cols { flex-direction: column; gap: 8px; }
+            .lang-row { flex-direction: column; gap: 8px; }
             .srt-mode { gap: 16px; }
         }
     </style>
 </head>
 <body>
 <div class="container">
+    <!-- API 金鑰設定區塊（折疊） -->
     <div class="accordion" id="keyAccordion">
         <div class="accordion-header" id="accordionToggle">
             <span>🔑 API 金鑰設定 (Gemini + DeepL 選用)</span>
@@ -87,32 +85,16 @@
         </div>
     </div>
 
+    <!-- 文字翻譯卡片 -->
     <div class="translate-card">
-        <div class="box-header">
-            <select id="sourceLang"></select>
-            <div>
-                <button id="pasteBtn">📋 貼上</button>
-                <button id="fileBtn">📂 開啟檔案</button>
-                <button id="clearSource" class="danger">清除</button>
-                <input type="file" id="fileInput" accept=".txt,.md,.csv,.srt" style="display: none;">
+        <!-- 三欄下拉：來源語言、行業領域、目標語言 -->
+        <div class="lang-row">
+            <div class="lang-item">
+                <label>📖 來源語言</label>
+                <select id="sourceLang"></select>
             </div>
-        </div>
-        <textarea id="sourceText" placeholder="輸入要翻譯的文字... (若要處理SRT字幕，請勾選下方「SRT 字幕模式」)"></textarea>
-        <div style="font-size:0.7rem; color:#2c3e66; margin-top:6px;">💡 提示：若貼上 SRT 字幕內容（含時間軸），請務必勾選下方「SRT 字幕模式」，否則會當作普通文字翻譯。</div>
-    </div>
-    <div class="translate-card">
-        <div class="box-header">
-            <select id="targetLang"></select>
-            <div><button id="copyBtn">📋 複製</button><button id="clearTarget" class="danger">清除</button></div>
-        </div>
-        <textarea id="targetText" placeholder="翻譯結果..." readonly></textarea>
-    </div>
-
-    <!-- 行業領域下拉 -->
-    <div class="translate-card" style="padding: 12px 16px;">
-        <div class="row-2cols">
-            <div>
-                <label>🏷️ 行業領域（影響 Gemini 翻譯風格）</label>
+            <div class="lang-item">
+                <label>🏷️ 行業領域（影響 Gemini）</label>
                 <select id="domainSelect">
                     <option value="general">一般翻譯</option>
                     <option value="travel">旅遊</option>
@@ -129,7 +111,31 @@
                     <option value="finance">金融</option>
                 </select>
             </div>
+            <div class="lang-item">
+                <label>🎯 目標語言</label>
+                <select id="targetLang"></select>
+            </div>
         </div>
+
+        <div class="box-header">
+            <div style="flex:1"></div>
+            <div>
+                <button id="pasteBtn">📋 貼上</button>
+                <button id="fileBtn">📂 開啟檔案</button>
+                <button id="clearSource" class="danger">清除</button>
+                <input type="file" id="fileInput" accept=".txt,.md,.csv,.srt" style="display: none;">
+            </div>
+        </div>
+        <textarea id="sourceText" placeholder="輸入要翻譯的文字... (若要處理SRT字幕，請勾選下方模式)"></textarea>
+        <div style="font-size:0.7rem; color:#2c3e66; margin-top:6px;">💡 提示：若貼上 SRT 字幕內容（含時間軸），請務必勾選下方「SRT 字幕模式」，否則會當作普通文字翻譯。</div>
+    </div>
+
+    <div class="translate-card">
+        <div class="box-header">
+            <div style="flex:1"></div>
+            <div><button id="copyBtn">📋 複製</button><button id="clearTarget" class="danger">清除</button></div>
+        </div>
+        <textarea id="targetText" placeholder="翻譯結果..." readonly></textarea>
     </div>
 
     <!-- SRT 模式控制項，預設不打勾 -->
@@ -284,7 +290,6 @@
             if (!data.srt_output || typeof data.srt_output !== 'string') {
                 throw new Error('後端回傳資料缺少 srt_output 欄位');
             }
-            // 將雙語 SRT 內容顯示在目標區，用戶可直接複製
             targetText.value = data.srt_output;
             setMsg(`✅ SRT 翻譯完成！共 ${data.count} 條字幕。您可以直接複製上方的字幕內容。`);
         } catch (err) {
@@ -294,7 +299,5 @@
         }
     };
 </script>
-</body>
-</html>
 </body>
 </html>
