@@ -114,6 +114,28 @@ def translate_google_with_retry(text, src, tgt, retries=3, delay=1):
 
 def translate_google(text, src, tgt):
     return translate_google_with_retry(text, src, tgt)
+def get_gemini_model(api_key):
+    global GEMINI_MODEL_CACHE
+
+    if GEMINI_MODEL_CACHE:
+        return GEMINI_MODEL_CACHE
+
+    list_url = f"https://generativelanguage.googleapis.com/v1beta/models?key={api_key}"
+
+    resp = requests.get(list_url, timeout=10)
+    resp.raise_for_status()
+
+    models_data = resp.json()
+
+    for model in models_data.get("models", []):
+        name = model["name"].replace("models/", "")
+
+        if "gemini" in name:
+            GEMINI_MODEL_CACHE = name
+            app.logger.info(f"Gemini模型快取: {name}")
+            return name
+
+    raise Exception("找不到 Gemini 模型")
 
 def translate_deepl(text, src, tgt, api_key):
     if not api_key:
