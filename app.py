@@ -7,9 +7,6 @@ import time
 from flask import Flask, request, jsonify, send_from_directory
 from flask_cors import CORS
 
-GEMINI_MODEL_CACHE = None
-TRANSLATION_CACHE = {}
-
 app = Flask(__name__, static_folder='.', static_url_path='')
 CORS(app)
 logging.basicConfig(level=logging.INFO)
@@ -114,28 +111,6 @@ def translate_google_with_retry(text, src, tgt, retries=3, delay=1):
 
 def translate_google(text, src, tgt):
     return translate_google_with_retry(text, src, tgt)
-def get_gemini_model(api_key):
-    global GEMINI_MODEL_CACHE
-
-    if GEMINI_MODEL_CACHE:
-        return GEMINI_MODEL_CACHE
-
-    list_url = f"https://generativelanguage.googleapis.com/v1beta/models?key={api_key}"
-
-    resp = requests.get(list_url, timeout=10)
-    resp.raise_for_status()
-
-    models_data = resp.json()
-
-    for model in models_data.get("models", []):
-        name = model["name"].replace("models/", "")
-
-        if "gemini" in name:
-            GEMINI_MODEL_CACHE = name
-            app.logger.info(f"Gemini模型快取: {name}")
-            return name
-
-    raise Exception("找不到 Gemini 模型")
 
 def translate_deepl(text, src, tgt, api_key):
     if not api_key:
@@ -152,7 +127,48 @@ def translate_deepl(text, src, tgt, api_key):
     resp.raise_for_status()
     return resp.json()["translations"][0]["text"]
 
-selected_model = get_gemini_model(api_key)
+def translate_gemini(text, src, tgt, api_key, domain="general"):
+    if not api_key:
+        raise ValueError("Gemini API Key 未設定")
+    src_name = LANG_CONFIG.get(src, {}).get("name", src)
+    tgt_name = LANG_CONFIG.get(tgt, {}).get("name", tgt)
+    
+    domain_prompt = get_domain_prompt(domain)
+    if domain_prompt:
+        domain_prompt = f"{domain_prompt}\n\n"
+    
+    prompt = f"{domain_prompt}請將以下{src_name}內容翻譯成{tgt_name}，只輸出翻譯結果，不要附加任何說明。\n原文: {text}"
+    
+    list_url = f"https://generativelanguage.googleapis.com/v1beta/models?key={api_key}"
+    try:
+        list_resp = requests.get(list_url, timeout=10)
+        list_resp.raise_for_status()
+        models_data = list_resp.json()
+        available_models = [model['name'].replace('models/', '') for model in models_data.get('models', [])]
+    except Exception as e:
+        raise Exception(f"无法获取Gemini模型列表: {e}")
+
+    selected_model = None
+    for model_name in available_models:
+        if 'gemini' in model_name:
+            selected_model = model_name
+            break
+    if not selected_model:
+        raise Exception("没有可用的 Gemini 模型")
+
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/{selected_model}:generateContent?key={api_key}"
+    payload = {
+        "contents": [{"parts": [{"text": prompt}]}],
+        "generationConfig": {"temperature": 0.2, "maxOutputTokens": 2000}
+    }
+    resp = requests.post(url, json=payload, timeout=35)
+    if resp.status_code != 200:
+        raise Exception(f"Gemini API 错误 {resp.status_code}")
+    data = resp.json()
+    result = data.get("candidates", [{}])[0].get("content", {}).get("parts", [{}])[0].get("text")
+    if not result:
+        raise Exception("无法解析 Gemini 回应")
+    return result.strip()
 
 def parse_srt(content):
     pattern = r'(\d+)\n(\d{2}:\d{2}:\d{2},\d{3}) --> (\d{2}:\d{2}:\d{2},\d{3})\n(.*?)(?=\n\d+\n|\n*$)'
@@ -301,3 +317,4 @@ def index():
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port, debug=False)
+
