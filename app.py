@@ -3,6 +3,7 @@ import re
 import requests
 import logging
 import traceback
+import time
 from flask import Flask, request, jsonify, send_from_directory
 from flask_cors import CORS
 
@@ -24,7 +25,7 @@ LANG_CONFIG = {
     "es": {"google": "es", "deepl": "ES", "name": "西班牙文"}
 }
 
-# ========== 行业术语映射 ==========
+# 行業術語映射
 DOMAIN_PROMPTS = {
     "general": "",
     "travel": "你是一位專業旅遊翻譯員。請使用常用的旅遊、觀光、餐飲、交通等相關詞彙。",
@@ -44,15 +45,28 @@ DOMAIN_PROMPTS = {
 def get_domain_prompt(domain):
     return DOMAIN_PROMPTS.get(domain, "")
 
-# ---------- 翻译引擎 ----------
+# ---------- 翻譯引擎（加入重試） ----------
+def translate_google_with_retry(text, src, tgt, retries=3, delay=1):
+    for i in range(retries):
+        try:
+            src_code = LANG_CONFIG.get(src, {}).get("google", "auto")
+            tgt_code = LANG_CONFIG.get(tgt, {}).get("google", "en")
+            url = f"https://translate.googleapis.com/translate_a/single?client=gtx&sl={src_code}&tl={tgt_code}&dt=t&q={requests.utils.quote(text)}"
+            resp = requests.get(url, timeout=15)
+            if resp.status_code == 200:
+                data = resp.json()
+                result = "".join(part[0] for part in data[0] if part[0]) or text
+                return result
+            else:
+                app.logger.warning(f"Google 翻譯嘗試 {i+1} 失敗，狀態碼 {resp.status_code}")
+        except Exception as e:
+            app.logger.warning(f"Google 翻譯嘗試 {i+1} 異常: {e}")
+        if i < retries - 1:
+            time.sleep(delay)
+    raise Exception("Google 翻譯重試失敗")
+
 def translate_google(text, src, tgt):
-    src_code = LANG_CONFIG.get(src, {}).get("google", "auto")
-    tgt_code = LANG_CONFIG.get(tgt, {}).get("google", "en")
-    url = f"https://translate.googleapis.com/translate_a/single?client=gtx&sl={src_code}&tl={tgt_code}&dt=t&q={requests.utils.quote(text)}"
-    resp = requests.get(url, timeout=15)
-    resp.raise_for_status()
-    data = resp.json()
-    return "".join(part[0] for part in data[0] if part[0]) or text
+    return translate_google_with_retry(text, src, tgt)
 
 def translate_deepl(text, src, tgt, api_key):
     if not api_key:
