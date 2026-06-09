@@ -24,6 +24,26 @@ LANG_CONFIG = {
     "es": {"google": "es", "deepl": "ES", "name": "西班牙文"}
 }
 
+# ========== 行业术语映射 ==========
+DOMAIN_PROMPTS = {
+    "general": "",
+    "travel": "你是一位專業旅遊翻譯員。請使用常用的旅遊、觀光、餐飲、交通等相關詞彙。",
+    "baseball": "你是一位專業棒球翻譯員。翻譯時請使用棒球術語：RBI = 打點、ERA = 防禦率、Bullpen = 牛棚、Closer = 終結者、Home Run = 全壘打、Strikeout = 三振、Walk = 保送、Double Play = 雙殺。",
+    "basketball": "你是一位NBA專業翻譯員。翻譯規則：Rebound = 籃板、Assist = 助攻、Turnover = 失誤、Fast Break = 快攻、Paint = 禁區、Steal = 抄截、Block = 阻攻、Air Ball = 籃外空心。",
+    "gaming": "你是一位遊戲翻譯專家。請使用遊戲圈常見術語：HP = 生命值、MP = 法力值、XP = 經驗值、NPC = 非玩家角色、PvP = 玩家對戰、PvE = 玩家對環境、Boss = 頭目、Respawn = 重生、Lag = 延遲。",
+    "news": "你是一位新聞編譯。請使用客觀、中立、正式的新聞用語，避免口語。",
+    "entertainment": "你是一位娛樂圈翻譯。請使用演藝圈、影視、綜藝等常用詞彙。",
+    "mechanical": "你是機械工程翻譯專家。使用機械專業術語：CNC = CNC加工、Bearing = 軸承、Torque = 扭矩、Tolerance = 公差、Fixture = 治具、Gear = 齒輪、Shaft = 軸。",
+    "semiconductor": "你是半導體工程師。翻譯時保持專業術語：Wafer = 晶圓、Yield = 良率、Packaging = 封裝、Fab = 晶圓廠、Process Node = 製程節點、Tape-out = 投片、Die = 晶粒、Etching = 蝕刻。",
+    "medical": "你是一位醫療翻譯專家。使用標準醫學術語，確保準確性。",
+    "legal": "你是一位法律翻譯員。使用法律專業辭彙，確保條文精確。",
+    "it": "你是一位資訊科技翻譯專家。使用 IT 業界常用詞彙：API = 應用程式介面、Database = 資料庫、Server = 伺服器、Frontend = 前端、Backend = 後端。",
+    "finance": "你是一位金融翻譯員。使用金融專業詞彙：Equity = 股權、Bond = 債券、Derivative = 衍生品、Hedge = 避險、Dividend = 股息。"
+}
+
+def get_domain_prompt(domain):
+    return DOMAIN_PROMPTS.get(domain, "")
+
 # ---------- 翻译引擎 ----------
 def translate_google(text, src, tgt):
     src_code = LANG_CONFIG.get(src, {}).get("google", "auto")
@@ -49,17 +69,27 @@ def translate_deepl(text, src, tgt, api_key):
     resp.raise_for_status()
     return resp.json()["translations"][0]["text"]
 
-def translate_gemini(text, src, tgt, api_key):
+def translate_gemini(text, src, tgt, api_key, domain="general"):
     if not api_key:
         raise ValueError("Gemini API Key 未設定")
     src_name = LANG_CONFIG.get(src, {}).get("name", src)
     tgt_name = LANG_CONFIG.get(tgt, {}).get("name", tgt)
-    prompt = f"請將以下{src_name}內容翻譯成{tgt_name}，只輸出翻譯結果，不要附加任何說明。\n原文: {text}"
+    
+    domain_prompt = get_domain_prompt(domain)
+    if domain_prompt:
+        domain_prompt = f"{domain_prompt}\n\n"
+    
+    prompt = f"{domain_prompt}請將以下{src_name}內容翻譯成{tgt_name}，只輸出翻譯結果，不要附加任何說明。\n原文: {text}"
+    
     list_url = f"https://generativelanguage.googleapis.com/v1beta/models?key={api_key}"
-    list_resp = requests.get(list_url, timeout=10)
-    list_resp.raise_for_status()
-    models_data = list_resp.json()
-    available_models = [model['name'].replace('models/', '') for model in models_data.get('models', [])]
+    try:
+        list_resp = requests.get(list_url, timeout=10)
+        list_resp.raise_for_status()
+        models_data = list_resp.json()
+        available_models = [model['name'].replace('models/', '') for model in models_data.get('models', [])]
+    except Exception as e:
+        raise Exception(f"无法获取Gemini模型列表: {e}")
+
     selected_model = None
     for model_name in available_models:
         if 'gemini' in model_name:
@@ -67,6 +97,7 @@ def translate_gemini(text, src, tgt, api_key):
             break
     if not selected_model:
         raise Exception("没有可用的 Gemini 模型")
+
     url = f"https://generativelanguage.googleapis.com/v1beta/models/{selected_model}:generateContent?key={api_key}"
     payload = {
         "contents": [{"parts": [{"text": prompt}]}],
@@ -116,6 +147,7 @@ def translate():
         tgt = data.get("target_lang", "en")
         gemini_key = data.get("gemini_key", "") or ENV_GEMINI_KEY
         deepl_key = data.get("deepl_key", "") or ENV_DEEPL_KEY
+        domain = data.get("domain", "general")
 
         if not text:
             return jsonify({"error": "請輸入文字"}), 400
@@ -124,7 +156,7 @@ def translate():
 
         if gemini_key:
             try:
-                result = translate_gemini(text, src, tgt, gemini_key)
+                result = translate_gemini(text, src, tgt, gemini_key, domain)
                 return jsonify({"result": result, "engine": "Gemini AI"})
             except Exception as e:
                 app.logger.error(f"Gemini 失败: {e}")
@@ -157,13 +189,14 @@ def translate_srt():
         target_lang = data.get('target_lang', 'zh-TW')
         original_first = data.get('original_first', True)
         source_lang = data.get('source_lang', 'auto')
+        domain = data.get('domain', 'general')
 
         if not srt_content:
             return jsonify({"error": "请贴上 SRT 内容"}), 400
 
         subtitles = parse_srt(srt_content)
         if not subtitles:
-            return jsonify({"error": "无法解析 SRT 格式，请检查内容"}), 400
+            return jsonify({"error": "无法解析 SRT 格式"}), 400
 
         translated_subs = []
         for idx, sub in enumerate(subtitles, 1):
@@ -174,7 +207,7 @@ def translate_srt():
                 translated = None
                 if gemini_key:
                     try:
-                        translated = translate_gemini(original, source_lang, target_lang, gemini_key)
+                        translated = translate_gemini(original, source_lang, target_lang, gemini_key, domain)
                     except Exception as e:
                         app.logger.warning(f"Gemini 第{idx}条失败: {e}")
                 if not translated:
