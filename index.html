@@ -26,7 +26,6 @@
 
         .translate-card { background: white; border-radius: 24px; padding: 16px; margin-bottom: 16px; }
         .box-header { display: flex; justify-content: space-between; margin-bottom: 12px; flex-wrap: wrap; gap: 8px; }
-        /* 三欄布局：來源語言、行業領域、目標語言 */
         .lang-row { display: flex; gap: 12px; margin-bottom: 12px; flex-wrap: wrap; }
         .lang-item { flex: 1; min-width: 120px; }
         textarea { width: 100%; padding: 14px; border-radius: 20px; border: 1px solid #e2e8f0; font-size: 1rem; min-height: 160px; resize: vertical; }
@@ -44,7 +43,6 @@
         .srt-hint { font-size: 0.75rem; color: #e67e22; margin-left: 8px; }
 
         footer { text-align: center; font-size: 0.7rem; color: #6c7a8e; margin-top: 24px; }
-        hr { margin: 12px 0; }
 
         @media (max-width: 640px) {
             .container { padding: 12px; }
@@ -55,7 +53,7 @@
 </head>
 <body>
 <div class="container">
-    <!-- API 金鑰設定區塊（折疊） -->
+    <!-- 可折疊 API 金鑰設定區塊 -->
     <div class="accordion" id="keyAccordion">
         <div class="accordion-header" id="accordionToggle">
             <span>🔑 API 金鑰設定 (Gemini + DeepL 選用)</span>
@@ -87,7 +85,6 @@
 
     <!-- 文字翻譯卡片 -->
     <div class="translate-card">
-        <!-- 三欄下拉：來源語言、行業領域、目標語言 -->
         <div class="lang-row">
             <div class="lang-item">
                 <label>📖 來源語言</label>
@@ -291,7 +288,7 @@
                 throw new Error('後端回傳資料缺少 srt_output 欄位');
             }
             targetText.value = data.srt_output;
-            setMsg(`✅ SRT 翻譯完成！共 ${data.count} 條字幕。您可以直接複製上方的字幕內容。`);
+            setMsg(`✅ SRT 翻譯完成！共 ${data.count} 條字幕。引擎: ${data.engine}。您可以直接複製上方的字幕內容。`);
         } catch (err) {
             console.error('SRT 翻譯失敗:', err);
             targetText.value = '❌ SRT 翻譯失敗';
