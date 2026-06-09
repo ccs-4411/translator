@@ -152,48 +152,7 @@ def translate_deepl(text, src, tgt, api_key):
     resp.raise_for_status()
     return resp.json()["translations"][0]["text"]
 
-def translate_gemini(text, src, tgt, api_key, domain="general"):
-    if not api_key:
-        raise ValueError("Gemini API Key 未設定")
-    src_name = LANG_CONFIG.get(src, {}).get("name", src)
-    tgt_name = LANG_CONFIG.get(tgt, {}).get("name", tgt)
-    
-    domain_prompt = get_domain_prompt(domain)
-    if domain_prompt:
-        domain_prompt = f"{domain_prompt}\n\n"
-    
-    prompt = f"{domain_prompt}請將以下{src_name}內容翻譯成{tgt_name}，只輸出翻譯結果，不要附加任何說明。\n原文: {text}"
-    
-    list_url = f"https://generativelanguage.googleapis.com/v1beta/models?key={api_key}"
-    try:
-        list_resp = requests.get(list_url, timeout=10)
-        list_resp.raise_for_status()
-        models_data = list_resp.json()
-        available_models = [model['name'].replace('models/', '') for model in models_data.get('models', [])]
-    except Exception as e:
-        raise Exception(f"无法获取Gemini模型列表: {e}")
-
-    selected_model = None
-    for model_name in available_models:
-        if 'gemini' in model_name:
-            selected_model = model_name
-            break
-    if not selected_model:
-        raise Exception("没有可用的 Gemini 模型")
-
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/{selected_model}:generateContent?key={api_key}"
-    payload = {
-        "contents": [{"parts": [{"text": prompt}]}],
-        "generationConfig": {"temperature": 0.2, "maxOutputTokens": 2000}
-    }
-    resp = requests.post(url, json=payload, timeout=35)
-    if resp.status_code != 200:
-        raise Exception(f"Gemini API 错误 {resp.status_code}")
-    data = resp.json()
-    result = data.get("candidates", [{}])[0].get("content", {}).get("parts", [{}])[0].get("text")
-    if not result:
-        raise Exception("无法解析 Gemini 回应")
-    return result.strip()
+selected_model = get_gemini_model(api_key)
 
 def parse_srt(content):
     pattern = r'(\d+)\n(\d{2}:\d{2}:\d{2},\d{3}) --> (\d{2}:\d{2}:\d{2},\d{3})\n(.*?)(?=\n\d+\n|\n*$)'
