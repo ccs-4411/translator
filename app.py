@@ -1,313 +1,297 @@
-import os
-import re
-import requests
-import logging
-import traceback
-import time
-from flask import Flask, request, jsonify, send_from_directory
-from flask_cors import CORS
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <title>智慧翻譯 | 多引擎 + 雙語SRT</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { background: #f5f7fb; font-family: system-ui, sans-serif; padding: 0; }
+        .container { max-width: 800px; margin: 0 auto; padding: 16px; }
 
-app = Flask(__name__, static_folder='.', static_url_path='')
-CORS(app)
-logging.basicConfig(level=logging.INFO)
+        .accordion { background: white; border-radius: 24px; margin-bottom: 20px; overflow: hidden; box-shadow: 0 2px 8px rgba(0,0,0,0.05); }
+        .accordion-header { background: #fff; padding: 14px 18px; cursor: pointer; font-weight: 600; display: flex; justify-content: space-between; border-bottom: 1px solid #eef2f6; }
+        .accordion-header .arrow { transition: transform 0.3s; }
+        .accordion.hide .accordion-content { display: none; }
+        .accordion.hide .arrow { transform: rotate(-90deg); }
+        .accordion-content { padding: 16px; }
 
-ENV_GEMINI_KEY = os.environ.get("GEMINI_API_KEY", "")
-ENV_DEEPL_KEY = os.environ.get("DEEPL_API_KEY", "")
+        .api-group { display: flex; flex-wrap: wrap; gap: 10px; align-items: flex-end; }
+        .input-flex { flex: 2; min-width: 160px; }
+        button { background: #eef2f8; border: 1px solid #dce3ec; padding: 8px 14px; border-radius: 40px; cursor: pointer; font-size: 0.8rem; }
+        button.primary { background: #2c3e66; color: white; border: none; }
+        button.danger { background: #fff0f0; border-color: #ffcdcd; color: #b13e3e; }
+        input, select { width: 100%; padding: 10px 14px; border-radius: 30px; border: 1px solid #cfdde6; font-size: 0.9rem; }
+        label { font-size: 0.7rem; font-weight: 600; color: #4b5565; margin-bottom: 4px; display: block; }
 
-LANG_CONFIG = {
-    "zh-TW": {"google": "zh-TW", "deepl": "ZH-HANT", "name": "繁體中文"},
-    "zh-CN": {"google": "zh-CN", "deepl": "ZH", "name": "簡體中文"},
-    "en": {"google": "en", "deepl": "EN", "name": "英文"},
-    "ja": {"google": "ja", "deepl": "JA", "name": "日文"},
-    "ko": {"google": "ko", "deepl": "KO", "name": "韓文"},
-    "fr": {"google": "fr", "deepl": "FR", "name": "法文"},
-    "de": {"google": "de", "deepl": "DE", "name": "德文"},
-    "es": {"google": "es", "deepl": "ES", "name": "西班牙文"}
-}
+        .translate-card { background: white; border-radius: 24px; padding: 16px; margin-bottom: 16px; }
+        .box-header { display: flex; justify-content: space-between; margin-bottom: 12px; flex-wrap: wrap; gap: 8px; }
+        .lang-row { display: flex; gap: 12px; margin-bottom: 12px; flex-wrap: wrap; }
+        .lang-item { flex: 1; min-width: 120px; }
+        textarea { width: 100%; padding: 14px; border-radius: 20px; border: 1px solid #e2e8f0; font-size: 1rem; min-height: 160px; resize: vertical; }
 
-# ========== 行業術語映射（已優化棒球） ==========
-DOMAIN_PROMPTS = {
-    "general": "",
-    "travel": "你是一位專業旅遊翻譯員。請使用常用的旅遊、觀光、餐飲、交通等相關詞彙。",
-    "baseball": """你是一位專業棒球翻譯員，必須使用棒球術語。
+        .translate-bar { text-align: center; margin: 8px 0 16px; }
+        .btn-translate { background: #2c3e66; color: white; padding: 12px 24px; border-radius: 60px; width: 80%; max-width: 260px; border: none; font-weight: 600; font-size: 1rem; }
 
-核心術語對照：
-- pitch = 投球
-- strike = 好球
-- ball = 壞球
-- home run = 全壘打
-- RBI = 打點
-- ERA = 防禦率
-- bullpen = 牛棚
-- closer = 終結者
-- sinker = 伸卡球
-- fastball = 快速球
-- curveball = 曲球
-- slider = 滑球
-- changeup = 變速球
-- walk = 保送
-- strikeout = 三振
-- double play = 雙殺
-- batting average = 打擊率
-- on-base percentage = 上壘率
-- slugging percentage = 長打率
-- pitcher = 投手
-- batter = 打者
-- catcher = 捕手
-- infield = 內野
-- outfield = 外野
-- dugout = 休息區
-- mound = 投手丘
-- plate = 本壘板
-- count = 球數
-- full count = 滿球數
-- swing = 揮棒
-- miss = 揮空
-- location = 進壘點
+        .message { background: #eef2fa; border-radius: 20px; padding: 10px 16px; margin-top: 12px; border-left: 4px solid #5f7f9e; font-size: 0.8rem; }
+        .error { background: #ffefef; border-left-color: #d9534f; color: #a94442; }
+        .warning { background: #fff3cd; border-left-color: #ffc107; color: #856404; }
 
-請將以下內容翻譯成繁體中文，保持棒球專業術語。""",
-    "basketball": "你是一位NBA專業翻譯員。翻譯規則：Rebound = 籃板、Assist = 助攻、Turnover = 失誤、Fast Break = 快攻、Paint = 禁區、Steal = 抄截、Block = 阻攻、Air Ball = 籃外空心。",
-    "gaming": "你是一位遊戲翻譯專家。請使用遊戲圈常見術語：HP = 生命值、MP = 法力值、XP = 經驗值、NPC = 非玩家角色、PvP = 玩家對戰、PvE = 玩家對環境、Boss = 頭目、Respawn = 重生、Lag = 延遲。",
-    "news": "你是一位新聞編譯。請使用客觀、中立、正式的新聞用語，避免口語。",
-    "entertainment": "你是一位娛樂圈翻譯。請使用演藝圈、影視、綜藝等常用詞彙。",
-    "mechanical": "你是機械工程翻譯專家。使用機械專業術語：CNC = CNC加工、Bearing = 軸承、Torque = 扭矩、Tolerance = 公差、Fixture = 治具、Gear = 齒輪、Shaft = 軸。",
-    "semiconductor": "你是半導體工程師。翻譯時保持專業術語：Wafer = 晶圓、Yield = 良率、Packaging = 封裝、Fab = 晶圓廠、Process Node = 製程節點、Tape-out = 投片、Die = 晶粒、Etching = 蝕刻。",
-    "medical": "你是一位醫療翻譯專家。使用標準醫學術語，確保準確性。",
-    "legal": "你是一位法律翻譯員。使用法律專業辭彙，確保條文精確。",
-    "it": "你是一位資訊科技翻譯專家。使用 IT 業界常用詞彙：API = 應用程式介面、Database = 資料庫、Server = 伺服器、Frontend = 前端、Backend = 後端。",
-    "finance": "你是一位金融翻譯員。使用金融專業詞彙：Equity = 股權、Bond = 債券、Derivative = 衍生品、Hedge = 避險、Dividend = 股息。"
-}
+        .srt-mode { margin: 12px 0; display: flex; gap: 24px; align-items: center; flex-wrap: wrap; font-size: 1rem; }
+        .srt-mode label { display: inline-flex; align-items: center; gap: 8px; font-size: 1rem; font-weight: normal; cursor: pointer; color: #1f2937; }
+        .srt-mode input[type="checkbox"] { width: 18px; height: 18px; margin: 0; cursor: pointer; }
+        .srt-hint { font-size: 0.75rem; color: #e67e22; margin-left: 8px; }
 
-def get_domain_prompt(domain):
-    return DOMAIN_PROMPTS.get(domain, "")
+        footer { text-align: center; font-size: 0.7rem; color: #6c7a8e; margin-top: 24px; }
 
-# ---------- 翻譯引擎（加入重試） ----------
-def translate_google_with_retry(text, src, tgt, retries=3, delay=1):
-    for i in range(retries):
-        try:
-            src_code = LANG_CONFIG.get(src, {}).get("google", "auto")
-            tgt_code = LANG_CONFIG.get(tgt, {}).get("google", "en")
-            url = f"https://translate.googleapis.com/translate_a/single?client=gtx&sl={src_code}&tl={tgt_code}&dt=t&q={requests.utils.quote(text)}"
-            resp = requests.get(url, timeout=20)
-            if resp.status_code == 200:
-                data = resp.json()
-                result = "".join(part[0] for part in data[0] if part[0]) or text
-                return result
-            else:
-                app.logger.warning(f"Google 翻譯嘗試 {i+1} 失敗，狀態碼 {resp.status_code}")
-        except Exception as e:
-            app.logger.warning(f"Google 翻譯嘗試 {i+1} 異常: {e}")
-        if i < retries - 1:
-            time.sleep(delay)
-    raise Exception("Google 翻譯重試失敗")
+        @media (max-width: 640px) {
+            .container { padding: 12px; }
+            .lang-row { flex-direction: column; gap: 8px; }
+            .srt-mode { gap: 16px; }
+        }
+    </style>
+</head>
+<body>
+<div class="container">
+    <div class="accordion" id="keyAccordion">
+        <div class="accordion-header" id="accordionToggle">
+            <span>🔑 API 金鑰設定 (Gemini + DeepL 選用)</span>
+            <span class="arrow">▼</span>
+        </div>
+        <div class="accordion-content">
+            <div style="margin-bottom: 20px;">
+                <label>✨ Google Gemini API Key</label>
+                <div class="api-group">
+                    <div class="input-flex"><input type="password" id="geminiKey" placeholder="輸入 Gemini Key"></div>
+                    <button id="saveGemini" class="primary">💾 儲存</button>
+                    <button id="clearGemini" class="danger">🗑️ 清除</button>
+                </div>
+                <div id="geminiStatus" style="font-size:0.7rem; margin-top:6px;"></div>
+            </div>
+            <hr>
+            <div>
+                <label>🌐 DeepL API Key (選填)</label>
+                <div class="api-group">
+                    <div class="input-flex"><input type="password" id="deeplKey" placeholder="輸入 DeepL Key"></div>
+                    <button id="saveDeepl" class="primary">💾 儲存</button>
+                    <button id="clearDeepl" class="danger">🗑️ 清除</button>
+                </div>
+                <div id="deeplStatus" style="font-size:0.7rem; margin-top:6px;"></div>
+            </div>
+            <div class="message">💡 策略：Gemini優先 → 英法德用Google；日韓有DeepL Key優先</div>
+        </div>
+    </div>
 
-def translate_google(text, src, tgt):
-    return translate_google_with_retry(text, src, tgt)
+    <div class="translate-card">
+        <div class="lang-row">
+            <div class="lang-item">
+                <label>📖 來源語言</label>
+                <select id="sourceLang"></select>
+            </div>
+            <div class="lang-item">
+                <label>🏷️ 行業領域（影響 Gemini）</label>
+                <select id="domainSelect">
+                    <option value="general">一般翻譯</option>
+                    <option value="travel">旅遊</option>
+                    <option value="baseball">棒球</option>
+                    <option value="basketball">籃球</option>
+                    <option value="gaming">遊戲</option>
+                    <option value="news">新聞</option>
+                    <option value="entertainment">娛樂</option>
+                    <option value="mechanical">機械</option>
+                    <option value="semiconductor">半導體</option>
+                    <option value="medical">醫療</option>
+                    <option value="legal">法律</option>
+                    <option value="it">資訊科技</option>
+                    <option value="finance">金融</option>
+                </select>
+            </div>
+            <div class="lang-item">
+                <label>🎯 目標語言</label>
+                <select id="targetLang"></select>
+            </div>
+        </div>
 
-def translate_deepl(text, src, tgt, api_key):
-    if not api_key:
-        raise ValueError("DeepL API Key 未設定")
-    tgt_code = LANG_CONFIG[tgt]["deepl"]
-    src_code = LANG_CONFIG[src]["deepl"]
-    if src_code == "ZH-HANT":
-        src_code = "ZH"
-    params = {"text": text, "target_lang": tgt_code}
-    if src_code and src_code != "auto":
-        params["source_lang"] = src_code
-    headers = {"Authorization": f"DeepL-Auth-Key {api_key}"}
-    resp = requests.post("https://api-free.deepl.com/v2/translate", data=params, headers=headers, timeout=20)
-    resp.raise_for_status()
-    return resp.json()["translations"][0]["text"]
+        <div class="box-header">
+            <div style="flex:1"></div>
+            <div>
+                <button id="pasteBtn">📋 貼上</button>
+                <button id="fileBtn">📂 開啟檔案</button>
+                <button id="clearSource" class="danger">清除</button>
+                <input type="file" id="fileInput" accept=".txt,.md,.csv,.srt" style="display: none;">
+            </div>
+        </div>
+        <textarea id="sourceText" placeholder="輸入要翻譯的文字... (若要處理SRT字幕，請勾選下方模式)"></textarea>
+        <div style="font-size:0.7rem; color:#2c3e66; margin-top:6px;">💡 提示：若貼上 SRT 字幕內容（含時間軸），請務必勾選下方「SRT 字幕模式」，否則會當作普通文字翻譯。</div>
+    </div>
 
-def translate_gemini(text, src, tgt, api_key, domain="general"):
-    if not api_key:
-        raise ValueError("Gemini API Key 未設定")
-    src_name = LANG_CONFIG.get(src, {}).get("name", src)
-    tgt_name = LANG_CONFIG.get(tgt, {}).get("name", tgt)
-    
-    domain_prompt = get_domain_prompt(domain)
-    if domain_prompt:
-        domain_prompt = f"{domain_prompt}\n\n"
-    
-    prompt = f"{domain_prompt}請將以下{src_name}內容翻譯成{tgt_name}，只輸出翻譯結果，不要附加任何說明。\n原文: {text}"
-    
-    list_url = f"https://generativelanguage.googleapis.com/v1beta/models?key={api_key}"
-    try:
-        list_resp = requests.get(list_url, timeout=10)
-        list_resp.raise_for_status()
-        models_data = list_resp.json()
-        available_models = [model['name'].replace('models/', '') for model in models_data.get('models', [])]
-    except Exception as e:
-        raise Exception(f"无法获取Gemini模型列表: {e}")
+    <div class="translate-card">
+        <div class="box-header">
+            <div style="flex:1"></div>
+            <div><button id="copyBtn">📋 複製</button><button id="clearTarget" class="danger">清除</button></div>
+        </div>
+        <textarea id="targetText" placeholder="翻譯結果..." readonly></textarea>
+    </div>
 
-    selected_model = None
-    for model_name in available_models:
-        if 'gemini' in model_name:
-            selected_model = model_name
-            break
-    if not selected_model:
-        raise Exception("没有可用的 Gemini 模型")
+    <div class="srt-mode">
+        <label>
+            <input type="checkbox" id="srtModeCheckbox"> 🎞️ SRT 字幕模式 (保留時間軸)
+        </label>
+        <label>
+            <input type="checkbox" id="originalFirstCheckbox" checked> 原字幕在上
+        </label>
+        <span class="srt-hint">⚠️ 若要產生雙語 SRT 字幕，請務必勾選「SRT 字幕模式」</span>
+    </div>
 
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/{selected_model}:generateContent?key={api_key}"
-    payload = {
-        "contents": [{"parts": [{"text": prompt}]}],
-        "generationConfig": {"temperature": 0.2, "maxOutputTokens": 2000}
+    <div class="translate-bar">
+        <button id="translateBtn" class="btn-translate">✨ 開始翻譯</button>
+    </div>
+
+    <div id="messageBox" class="message">✅ 就緒 | 引擎: Gemini 優先 → 英法德:Google / 日韓:DeepL(有Key) → Google降級</div>
+    <footer>金鑰僅儲存於瀏覽器，並加密傳送至後端（後端不記錄）<br>SRT 翻譯結果會直接顯示在上方「翻譯結果」區，可直接複製貼上使用。</footer>
+</div>
+
+<script>
+    const LANG_LIST = [
+        { code: "zh-TW", name: "繁體中文" }, { code: "zh-CN", name: "簡體中文" },
+        { code: "en", name: "英文" }, { code: "ja", name: "日文" },
+        { code: "ko", name: "韓文" }, { code: "fr", name: "法文" }, { code: "de", name: "德文" }, { code: "es", name: "西班牙文" }
+    ];
+    function populateSelects() {
+        const source = document.getElementById('sourceLang');
+        const target = document.getElementById('targetLang');
+        const opts = LANG_LIST.map(l => `<option value="${l.code}">${l.name}</option>`).join('');
+        source.innerHTML = opts; target.innerHTML = opts;
+        source.value = "zh-TW"; target.value = "en";
     }
-    resp = requests.post(url, json=payload, timeout=35)
-    if resp.status_code != 200:
-        raise Exception(f"Gemini API 错误 {resp.status_code}")
-    data = resp.json()
-    result = data.get("candidates", [{}])[0].get("content", {}).get("parts", [{}])[0].get("text")
-    if not result:
-        raise Exception("无法解析 Gemini 回应")
-    return result.strip()
+    populateSelects();
 
-# ---------- SRT 辅助 ----------
-def parse_srt(content):
-    pattern = r'(\d+)\n(\d{2}:\d{2}:\d{2},\d{3}) --> (\d{2}:\d{2}:\d{2},\d{3})\n(.*?)(?=\n\d+\n|\n*$)'
-    blocks = re.findall(pattern, content, re.DOTALL)
-    subtitles = []
-    for block in blocks:
-        _, start_str, end_str, text = block
-        def to_seconds(t):
-            h, m, s = t.split(':')
-            s, ms = s.split(',')
-            return int(h)*3600 + int(m)*60 + int(s) + int(ms)/1000
-        start = to_seconds(start_str)
-        end = to_seconds(end_str)
-        text = text.replace('\n', ' ').strip()
-        if text:
-            subtitles.append({'start': start, 'end': end, 'text': text})
-    return subtitles
+    // 金鑰管理
+    const geminiInput = document.getElementById('geminiKey');
+    const deeplInput = document.getElementById('deeplKey');
+    const geminiStatus = document.getElementById('geminiStatus');
+    const deeplStatus = document.getElementById('deeplStatus');
+    function loadKeys() {
+        const g = localStorage.getItem('gemini_key');
+        const d = localStorage.getItem('deepl_key');
+        if (g) { geminiInput.value = g; geminiStatus.innerText = '✅ 已載入'; }
+        if (d) { deeplInput.value = d; deeplStatus.innerText = '✅ 已載入'; }
+    }
+    document.getElementById('saveGemini').onclick = () => { let k = geminiInput.value.trim(); if(k){ localStorage.setItem('gemini_key', k); geminiStatus.innerText = '✅ 已儲存'; } };
+    document.getElementById('clearGemini').onclick = () => { localStorage.removeItem('gemini_key'); geminiInput.value = ''; geminiStatus.innerText = '🧹 已清除'; };
+    document.getElementById('saveDeepl').onclick = () => { let k = deeplInput.value.trim(); if(k){ localStorage.setItem('deepl_key', k); deeplStatus.innerText = '✅ 已儲存'; } };
+    document.getElementById('clearDeepl').onclick = () => { localStorage.removeItem('deepl_key'); deeplInput.value = ''; deeplStatus.innerText = '🧹 已清除'; };
+    loadKeys();
 
-def format_srt_time(seconds):
-    h = int(seconds // 3600)
-    m = int((seconds % 3600) // 60)
-    s = int(seconds % 60)
-    ms = int((seconds % 1) * 1000)
-    return f"{h:02d}:{m:02d}:{s:02d},{ms:03d}"
+    const sourceText = document.getElementById('sourceText');
+    const targetText = document.getElementById('targetText');
+    const sourceLang = document.getElementById('sourceLang');
+    const targetLang = document.getElementById('targetLang');
+    const msgBox = document.getElementById('messageBox');
+    const domainSelect = document.getElementById('domainSelect');
+    function setMsg(msg, type='info') {
+        msgBox.innerHTML = msg;
+        msgBox.classList.remove('error', 'warning');
+        if (type === 'error') msgBox.classList.add('error');
+        else if (type === 'warning') msgBox.classList.add('warning');
+    }
 
-# ---------- API 路由 ----------
-@app.route("/translate", methods=["POST"])
-def translate():
-    try:
-        data = request.get_json()
-        text = data.get("text", "").strip()
-        src = data.get("source_lang", "zh-TW")
-        tgt = data.get("target_lang", "en")
-        gemini_key = data.get("gemini_key", "") or ENV_GEMINI_KEY
-        deepl_key = data.get("deepl_key", "") or ENV_DEEPL_KEY
-        domain = data.get("domain", "general")
+    // 輔助功能
+    document.getElementById('pasteBtn').onclick = async () => { try { const t = await navigator.clipboard.readText(); sourceText.value = t; setMsg('已貼上'); } catch(e){ setMsg('無法讀取剪貼簿', 'error'); } };
+    document.getElementById('clearSource').onclick = () => { sourceText.value = ''; setMsg('原文已清除'); };
+    document.getElementById('copyBtn').onclick = async () => { if(targetText.value) await navigator.clipboard.writeText(targetText.value); setMsg('已複製'); };
+    document.getElementById('clearTarget').onclick = () => { targetText.value = ''; setMsg('結果已清除'); };
+    const fileBtn = document.getElementById('fileBtn');
+    const fileInput = document.getElementById('fileInput');
+    fileBtn.onclick = () => fileInput.click();
+    fileInput.onchange = (event) => {
+        const file = event.target.files[0];
+        if (!file) return;
+        if (file.size > 5 * 1024 * 1024) { setMsg('檔案過大，請選擇小於 5MB 的文字檔', 'error'); fileInput.value = ''; return; }
+        const reader = new FileReader();
+        reader.onload = (e) => { sourceText.value = e.target.result; setMsg(`✅ 已開啟檔案：${file.name} (${(file.size/1024).toFixed(1)} KB)`); };
+        reader.onerror = () => setMsg('❌ 檔案讀取失敗', 'error');
+        reader.readAsText(file, 'UTF-8');
+    };
+    const accordion = document.getElementById('keyAccordion');
+    document.getElementById('accordionToggle').onclick = () => accordion.classList.toggle('hide');
 
-        if not text:
-            return jsonify({"error": "請輸入文字"}), 400
-        if src == tgt:
-            return jsonify({"result": text, "engine": "相同語言"})
+    // SRT 模式
+    const srtModeCheckbox = document.getElementById('srtModeCheckbox');
+    const originalFirstCheckbox = document.getElementById('originalFirstCheckbox');
+    const translateBtn = document.getElementById('translateBtn');
 
-        if gemini_key:
-            try:
-                result = translate_gemini(text, src, tgt, gemini_key, domain)
-                return jsonify({"result": result, "engine": "Gemini AI"})
-            except Exception as e:
-                app.logger.error(f"Gemini 失败: {e}")
+    translateBtn.onclick = async () => {
+        const text = sourceText.value.trim();
+        if (!text) { setMsg('請輸入內容', 'error'); return; }
+        const tgt = targetLang.value;
+        const domain = domainSelect.value;
 
-        if tgt in ["en", "fr", "de", "es"]:
-            result = translate_google(text, src, tgt)
-            engine = "Google 翻譯"
-        elif tgt in ["ja", "ko"] and deepl_key:
-            try:
-                result = translate_deepl(text, src, tgt, deepl_key)
-                engine = "DeepL 翻譯"
-            except:
-                result = translate_google(text, src, tgt)
-                engine = "Google 翻譯 (DeepL降級)"
-        else:
-            result = translate_google(text, src, tgt)
-            engine = "Google 翻譯"
-        return jsonify({"result": result, "engine": engine})
-    except Exception as e:
-        app.logger.error(traceback.format_exc())
-        return jsonify({"error": str(e)}), 500
+        if (!srtModeCheckbox.checked) {
+            // 普通文字翻譯
+            const src = sourceLang.value;
+            if (src === tgt) { targetText.value = text; setMsg('來源與目標相同'); return; }
+            targetText.value = '⏳ 翻譯中...';
+            setMsg('🔄 呼叫後端...');
+            try {
+                const gemini_key = localStorage.getItem('gemini_key') || '';
+                const deepl_key = localStorage.getItem('deepl_key') || '';
+                const res = await fetch('/translate', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ 
+                        text, 
+                        source_lang: src, 
+                        target_lang: tgt, 
+                        gemini_key, 
+                        deepl_key,
+                        domain: domain
+                    })
+                });
+                const data = await res.json();
+                if (!res.ok) throw new Error(data.error || '失敗');
+                targetText.value = data.result;
+                setMsg(`✅ 完成 (引擎: ${data.engine})`);
+            } catch (err) {
+                targetText.value = '❌ 錯誤';
+                setMsg(`錯誤: ${err.message}`, 'error');
+            }
+            return;
+        }
 
-@app.route('/translate_srt', methods=['POST'])
-def translate_srt():
-    try:
-        data = request.get_json()
-        srt_content = data.get('srt_content', '').strip()
-        gemini_key = data.get('gemini_key', '') or ENV_GEMINI_KEY
-        deepl_key = data.get('deepl_key', '') or ENV_DEEPL_KEY
-        target_lang = data.get('target_lang', 'zh-TW')
-        original_first = data.get('original_first', True)
-        source_lang = data.get('source_lang', 'auto')
-        domain = data.get('domain', 'general')
-
-        if not srt_content:
-            return jsonify({"error": "请贴上 SRT 内容"}), 400
-
-        subtitles = parse_srt(srt_content)
-        if not subtitles:
-            return jsonify({"error": "无法解析 SRT 格式"}), 400
-
-        translated_subs = []
-        gemini_success = False
-
-        for idx, sub in enumerate(subtitles, 1):
-            original = sub['text']
-            if not original.strip():
-                translated = ""
-            else:
-                translated = None
-                if gemini_key:
-                    try:
-                        translated = translate_gemini(original, source_lang, target_lang, gemini_key, domain)
-                        gemini_success = True
-                    except Exception as e:
-                        app.logger.warning(f"Gemini 第{idx}条失败: {e}")
-                if not translated:
-                    try:
-                        translated = translate_google(original, source_lang, target_lang)
-                    except Exception as e:
-                        app.logger.error(f"Google 第{idx}条失败: {e}")
-                        translated = None
-                if not translated or not translated.strip():
-                    translated = f"[未翻译] {original}"
-            translated_subs.append({
-                'start': sub['start'],
-                'end': sub['end'],
-                'original': original,
-                'translated': translated
-            })
-
-        srt_output = ""
-        for i, sub in enumerate(translated_subs, 1):
-            start_str = format_srt_time(sub['start'])
-            end_str = format_srt_time(sub['end'])
-            if original_first:
-                text = f"{sub['original']}\n{sub['translated']}"
-            else:
-                text = f"{sub['translated']}\n{sub['original']}"
-            srt_output += f"{i}\n{start_str} --> {end_str}\n{text}\n\n"
-
-        if gemini_success:
-            engine = "Gemini AI (混合)"
-        elif gemini_key:
-            engine = "Google 翻譯 (Gemini 失敗)"
-        else:
-            engine = "Google 翻譯"
-
-        return jsonify({
-            "srt_output": srt_output,
-            "count": len(translated_subs),
-            "engine": engine
-        })
-    except Exception as e:
-        app.logger.error(traceback.format_exc())
-        return jsonify({"error": f"SRT 处理失败: {str(e)}"}), 500
-
-@app.route("/")
-def index():
-    return send_from_directory('.', 'index.html')
-
-if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 5000))
-    app.run(host="0.0.0.0", port=port, debug=False)
+        // SRT 模式
+        targetText.value = '⏳ 正在解析並翻譯 SRT 字幕...';
+        setMsg('🔄 SRT 字幕翻譯中，請稍候...');
+        try {
+            const gemini_key = localStorage.getItem('gemini_key') || '';
+            const deepl_key = localStorage.getItem('deepl_key') || '';
+            const srcLang = sourceLang.value;
+            const response = await fetch('/translate_srt', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    srt_content: text,
+                    gemini_key: gemini_key,
+                    deepl_key: deepl_key,
+                    target_lang: tgt,
+                    original_first: originalFirstCheckbox.checked,
+                    source_lang: srcLang,
+                    domain: domain
+                })
+            });
+            const data = await response.json();
+            if (!response.ok) throw new Error(data.error || `HTTP ${response.status}`);
+            if (!data.srt_output || typeof data.srt_output !== 'string') {
+                throw new Error('後端回傳資料缺少 srt_output 欄位');
+            }
+            targetText.value = data.srt_output;
+            setMsg(`✅ SRT 翻譯完成！共 ${data.count} 條字幕。引擎: ${data.engine}。您可以直接複製上方的字幕內容。`);
+        } catch (err) {
+            console.error('SRT 翻譯失敗:', err);
+            targetText.value = '❌ SRT 翻譯失敗';
+            setMsg(`❌ SRT 翻譯失敗: ${err.message}`, 'error');
+        }
+    };
+</script>
+</body>
+</html>
