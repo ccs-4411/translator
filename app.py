@@ -7,6 +7,9 @@ import time
 from flask import Flask, request, jsonify, send_from_directory
 from flask_cors import CORS
 
+GEMINI_MODEL_CACHE = None
+TRANSLATION_CACHE = {}
+
 app = Flask(__name__, static_folder='.', static_url_path='')
 CORS(app)
 logging.basicConfig(level=logging.INFO)
