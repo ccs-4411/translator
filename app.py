@@ -25,11 +25,47 @@ LANG_CONFIG = {
     "es": {"google": "es", "deepl": "ES", "name": "西班牙文"}
 }
 
-# 行業術語映射
+# ========== 行業術語映射（已優化棒球） ==========
 DOMAIN_PROMPTS = {
     "general": "",
     "travel": "你是一位專業旅遊翻譯員。請使用常用的旅遊、觀光、餐飲、交通等相關詞彙。",
-    "baseball": "你是一位專業棒球翻譯員。翻譯時請使用棒球術語：RBI = 打點、ERA = 防禦率、Bullpen = 牛棚、Closer = 終結者、Home Run = 全壘打、Strikeout = 三振、Walk = 保送、Double Play = 雙殺。",
+    "baseball": """你是一位專業棒球翻譯員，必須使用棒球術語。
+
+核心術語對照：
+- pitch = 投球
+- strike = 好球
+- ball = 壞球
+- home run = 全壘打
+- RBI = 打點
+- ERA = 防禦率
+- bullpen = 牛棚
+- closer = 終結者
+- sinker = 伸卡球
+- fastball = 快速球
+- curveball = 曲球
+- slider = 滑球
+- changeup = 變速球
+- walk = 保送
+- strikeout = 三振
+- double play = 雙殺
+- batting average = 打擊率
+- on-base percentage = 上壘率
+- slugging percentage = 長打率
+- pitcher = 投手
+- batter = 打者
+- catcher = 捕手
+- infield = 內野
+- outfield = 外野
+- dugout = 休息區
+- mound = 投手丘
+- plate = 本壘板
+- count = 球數
+- full count = 滿球數
+- swing = 揮棒
+- miss = 揮空
+- location = 進壘點
+
+請將以下內容翻譯成繁體中文，保持棒球專業術語。""",
     "basketball": "你是一位NBA專業翻譯員。翻譯規則：Rebound = 籃板、Assist = 助攻、Turnover = 失誤、Fast Break = 快攻、Paint = 禁區、Steal = 抄截、Block = 阻攻、Air Ball = 籃外空心。",
     "gaming": "你是一位遊戲翻譯專家。請使用遊戲圈常見術語：HP = 生命值、MP = 法力值、XP = 經驗值、NPC = 非玩家角色、PvP = 玩家對戰、PvE = 玩家對環境、Boss = 頭目、Respawn = 重生、Lag = 延遲。",
     "news": "你是一位新聞編譯。請使用客觀、中立、正式的新聞用語，避免口語。",
@@ -52,7 +88,7 @@ def translate_google_with_retry(text, src, tgt, retries=3, delay=1):
             src_code = LANG_CONFIG.get(src, {}).get("google", "auto")
             tgt_code = LANG_CONFIG.get(tgt, {}).get("google", "en")
             url = f"https://translate.googleapis.com/translate_a/single?client=gtx&sl={src_code}&tl={tgt_code}&dt=t&q={requests.utils.quote(text)}"
-            resp = requests.get(url, timeout=15)
+            resp = requests.get(url, timeout=20)
             if resp.status_code == 200:
                 data = resp.json()
                 result = "".join(part[0] for part in data[0] if part[0]) or text
@@ -117,7 +153,7 @@ def translate_gemini(text, src, tgt, api_key, domain="general"):
         "contents": [{"parts": [{"text": prompt}]}],
         "generationConfig": {"temperature": 0.2, "maxOutputTokens": 2000}
     }
-    resp = requests.post(url, json=payload, timeout=30)
+    resp = requests.post(url, json=payload, timeout=35)
     if resp.status_code != 200:
         raise Exception(f"Gemini API 错误 {resp.status_code}")
     data = resp.json()
@@ -213,6 +249,8 @@ def translate_srt():
             return jsonify({"error": "无法解析 SRT 格式"}), 400
 
         translated_subs = []
+        gemini_success = False
+
         for idx, sub in enumerate(subtitles, 1):
             original = sub['text']
             if not original.strip():
@@ -222,6 +260,7 @@ def translate_srt():
                 if gemini_key:
                     try:
                         translated = translate_gemini(original, source_lang, target_lang, gemini_key, domain)
+                        gemini_success = True
                     except Exception as e:
                         app.logger.warning(f"Gemini 第{idx}条失败: {e}")
                 if not translated:
@@ -249,9 +288,17 @@ def translate_srt():
                 text = f"{sub['translated']}\n{sub['original']}"
             srt_output += f"{i}\n{start_str} --> {end_str}\n{text}\n\n"
 
+        if gemini_success:
+            engine = "Gemini AI (混合)"
+        elif gemini_key:
+            engine = "Google 翻譯 (Gemini 失敗)"
+        else:
+            engine = "Google 翻譯"
+
         return jsonify({
             "srt_output": srt_output,
-            "count": len(translated_subs)
+            "count": len(translated_subs),
+            "engine": engine
         })
     except Exception as e:
         app.logger.error(traceback.format_exc())
