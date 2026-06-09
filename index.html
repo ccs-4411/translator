@@ -29,6 +29,9 @@
         select { flex: 2; }
         textarea { width: 100%; padding: 14px; border-radius: 20px; border: 1px solid #e2e8f0; font-size: 1rem; min-height: 160px; resize: vertical; }
 
+        .row-2cols { display: flex; gap: 12px; margin-bottom: 12px; flex-wrap: wrap; }
+        .row-2cols > div { flex: 1; }
+
         .translate-bar { text-align: center; margin: 8px 0 16px; }
         .btn-translate { background: #2c3e66; color: white; padding: 12px 24px; border-radius: 60px; width: 80%; max-width: 260px; border: none; font-weight: 600; font-size: 1rem; }
 
@@ -36,31 +39,11 @@
         .error { background: #ffefef; border-left-color: #d9534f; color: #a94442; }
         .warning { background: #fff3cd; border-left-color: #ffc107; color: #856404; }
 
-        .srt-mode { 
-            margin: 12px 0; 
-            display: flex; 
-            gap: 24px; 
-            align-items: center; 
-            flex-wrap: wrap; 
-            font-size: 1rem; 
-        }
-        .srt-mode label {
-            display: inline-flex;
-            align-items: center;
-            gap: 8px;
-            font-size: 1rem;
-            font-weight: normal;
-            cursor: pointer;
-            color: #1f2937;
-        }
-        .srt-mode input[type="checkbox"] {
-            width: 18px;
-            height: 18px;
-            margin: 0;
-            cursor: pointer;
-        }
+        .srt-mode { margin: 12px 0; display: flex; gap: 24px; align-items: center; flex-wrap: wrap; font-size: 1rem; }
+        .srt-mode label { display: inline-flex; align-items: center; gap: 8px; font-size: 1rem; font-weight: normal; cursor: pointer; color: #1f2937; }
+        .srt-mode input[type="checkbox"] { width: 18px; height: 18px; margin: 0; cursor: pointer; }
+        .srt-hint { font-size: 0.75rem; color: #e67e22; margin-left: 8px; }
 
-        .download-area { margin-top: 16px; text-align: center; }
         footer { text-align: center; font-size: 0.7rem; color: #6c7a8e; margin-top: 24px; }
         hr { margin: 12px 0; }
 
@@ -68,6 +51,7 @@
             .container { padding: 12px; }
             .box-header { flex-direction: column; align-items: stretch; }
             select { width: 100%; }
+            .row-2cols { flex-direction: column; gap: 8px; }
             .srt-mode { gap: 16px; }
         }
     </style>
@@ -113,8 +97,8 @@
                 <input type="file" id="fileInput" accept=".txt,.md,.csv,.srt" style="display: none;">
             </div>
         </div>
-        <textarea id="sourceText" placeholder="輸入要翻譯的文字... (若要處理SRT字幕，請勾選下方模式)"></textarea>
-        <div style="font-size:0.7rem; color:#2c3e66; margin-top:6px;">💡 提示：若貼上 SRT 字幕內容（含時間軸），請勾選下方「SRT 字幕模式」並確保「來源語言」正確。</div>
+        <textarea id="sourceText" placeholder="輸入要翻譯的文字... (若要處理SRT字幕，請勾選下方「SRT 字幕模式」)"></textarea>
+        <div style="font-size:0.7rem; color:#2c3e66; margin-top:6px;">💡 提示：若貼上 SRT 字幕內容（含時間軸），請務必勾選下方「SRT 字幕模式」，否則會當作普通文字翻譯。</div>
     </div>
     <div class="translate-card">
         <div class="box-header">
@@ -124,26 +108,47 @@
         <textarea id="targetText" placeholder="翻譯結果..." readonly></textarea>
     </div>
 
+    <!-- 行業領域下拉 -->
+    <div class="translate-card" style="padding: 12px 16px;">
+        <div class="row-2cols">
+            <div>
+                <label>🏷️ 行業領域（影響 Gemini 翻譯風格）</label>
+                <select id="domainSelect">
+                    <option value="general">一般翻譯</option>
+                    <option value="travel">旅遊</option>
+                    <option value="baseball">棒球</option>
+                    <option value="basketball">籃球</option>
+                    <option value="gaming">遊戲</option>
+                    <option value="news">新聞</option>
+                    <option value="entertainment">娛樂</option>
+                    <option value="mechanical">機械</option>
+                    <option value="semiconductor">半導體</option>
+                    <option value="medical">醫療</option>
+                    <option value="legal">法律</option>
+                    <option value="it">資訊科技</option>
+                    <option value="finance">金融</option>
+                </select>
+            </div>
+        </div>
+    </div>
+
+    <!-- SRT 模式控制項，預設不打勾 -->
     <div class="srt-mode">
         <label>
-            <input type="checkbox" id="srtModeCheckbox" checked> 🎞️ SRT 字幕模式 (保留時間軸)
+            <input type="checkbox" id="srtModeCheckbox"> 🎞️ SRT 字幕模式 (保留時間軸)
         </label>
         <label>
             <input type="checkbox" id="originalFirstCheckbox" checked> 原字幕在上
         </label>
+        <span class="srt-hint">⚠️ 若要產生雙語 SRT 字幕，請務必勾選「SRT 字幕模式」</span>
     </div>
 
     <div class="translate-bar">
         <button id="translateBtn" class="btn-translate">✨ 開始翻譯</button>
     </div>
 
-    <div class="download-area">
-        <button id="downloadSrtBtn" class="primary" disabled>📥 下載雙語 SRT</button>
-        <div id="srtReadyStatus" style="font-size:0.7rem; margin-top:6px;"></div>
-    </div>
-
     <div id="messageBox" class="message">✅ 就緒 | 引擎: Gemini 優先 → 英法德:Google / 日韓:DeepL(有Key) → Google降級</div>
-    <footer>金鑰僅儲存於瀏覽器，並加密傳送至後端（後端不記錄）</footer>
+    <footer>金鑰僅儲存於瀏覽器，並加密傳送至後端（後端不記錄）<br>SRT 翻譯結果會直接顯示在上方「翻譯結果」區，可直接複製貼上使用。</footer>
 </div>
 
 <script>
@@ -183,6 +188,7 @@
     const sourceLang = document.getElementById('sourceLang');
     const targetLang = document.getElementById('targetLang');
     const msgBox = document.getElementById('messageBox');
+    const domainSelect = document.getElementById('domainSelect');
     function setMsg(msg, type='info') {
         msgBox.innerHTML = msg;
         msgBox.classList.remove('error', 'warning');
@@ -214,24 +220,12 @@
     const srtModeCheckbox = document.getElementById('srtModeCheckbox');
     const originalFirstCheckbox = document.getElementById('originalFirstCheckbox');
     const translateBtn = document.getElementById('translateBtn');
-    const downloadSrtBtn = document.getElementById('downloadSrtBtn');
-    const srtReadyStatus = document.getElementById('srtReadyStatus');
-    let currentSrtContent = null;
-
-    function enableDownloadButton(enabled) {
-        downloadSrtBtn.disabled = !enabled;
-        if (enabled) {
-            srtReadyStatus.innerText = '✅ 可下載雙語 SRT 檔案';
-            srtReadyStatus.style.color = '#2c3e66';
-        } else {
-            srtReadyStatus.innerText = '';
-        }
-    }
 
     translateBtn.onclick = async () => {
         const text = sourceText.value.trim();
         if (!text) { setMsg('請輸入內容', 'error'); return; }
         const tgt = targetLang.value;
+        const domain = domainSelect.value;
 
         if (!srtModeCheckbox.checked) {
             // 普通文字翻譯
@@ -245,7 +239,14 @@
                 const res = await fetch('/translate', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ text, source_lang: src, target_lang: tgt, gemini_key, deepl_key })
+                    body: JSON.stringify({ 
+                        text, 
+                        source_lang: src, 
+                        target_lang: tgt, 
+                        gemini_key, 
+                        deepl_key,
+                        domain: domain
+                    })
                 });
                 const data = await res.json();
                 if (!res.ok) throw new Error(data.error || '失敗');
@@ -255,16 +256,12 @@
                 targetText.value = '❌ 錯誤';
                 setMsg(`錯誤: ${err.message}`, 'error');
             }
-            enableDownloadButton(false);
             return;
         }
 
         // SRT 模式
         targetText.value = '⏳ 正在解析並翻譯 SRT 字幕...';
         setMsg('🔄 SRT 字幕翻譯中，請稍候...');
-        enableDownloadButton(false);
-        currentSrtContent = null;
-
         try {
             const gemini_key = localStorage.getItem('gemini_key') || '';
             const deepl_key = localStorage.getItem('deepl_key') || '';
@@ -278,7 +275,8 @@
                     deepl_key: deepl_key,
                     target_lang: tgt,
                     original_first: originalFirstCheckbox.checked,
-                    source_lang: srcLang
+                    source_lang: srcLang,
+                    domain: domain
                 })
             });
             const data = await response.json();
@@ -286,39 +284,17 @@
             if (!data.srt_output || typeof data.srt_output !== 'string') {
                 throw new Error('後端回傳資料缺少 srt_output 欄位');
             }
-            currentSrtContent = data.srt_output;
-            // 將合併後的雙語 SRT 內容顯示在翻譯結果框
-            targetText.value = currentSrtContent;
-            setMsg(`✅ SRT 翻譯完成！共 ${data.count} 條字幕。可點擊下方按鈕下載 SRT 檔案。`);
-            enableDownloadButton(true);
+            // 將雙語 SRT 內容顯示在目標區，用戶可直接複製
+            targetText.value = data.srt_output;
+            setMsg(`✅ SRT 翻譯完成！共 ${data.count} 條字幕。您可以直接複製上方的字幕內容。`);
         } catch (err) {
             console.error('SRT 翻譯失敗:', err);
             targetText.value = '❌ SRT 翻譯失敗';
             setMsg(`❌ SRT 翻譯失敗: ${err.message}`, 'error');
-            enableDownloadButton(false);
-        }
-    };
-
-    downloadSrtBtn.onclick = () => {
-        if (!currentSrtContent) {
-            setMsg('尚無可下載的 SRT 內容，請先勾選「SRT 字幕模式」並執行翻譯', 'warning');
-            return;
-        }
-        try {
-            const blob = new Blob([currentSrtContent], { type: 'text/plain' });
-            const a = document.createElement('a');
-            const url = URL.createObjectURL(blob);
-            a.href = url;
-            a.download = 'bilingual_subtitles.srt';
-            document.body.appendChild(a);
-            a.click();
-            document.body.removeChild(a);
-            URL.revokeObjectURL(url);
-            setMsg('✅ 雙語 SRT 已下載');
-        } catch (err) {
-            setMsg('下載失敗: ' + err.message, 'error');
         }
     };
 </script>
+</body>
+</html>
 </body>
 </html>
