@@ -1,426 +1,403 @@
-import os
-import re
-import requests
-import logging
-import traceback
-import time
-import json
-from flask import Flask, request, jsonify, send_from_directory
-from flask_cors import CORS
-
-app = Flask(__name__, static_folder='.', static_url_path='')
-CORS(app)
-logging.basicConfig(level=logging.INFO)
-
-# 從環境變數讀取金鑰（若前端無帶入則以此為備用）
-ENV_GEMINI_KEY = os.environ.get("GEMINI_API_KEY", "")
-ENV_DEEPL_KEY = os.environ.get("DEEPL_API_KEY", "")
-
-# 預設使用當前最高性價比、速度極快且支援高脈絡長度的通用模型
-DEFAULT_GEMINI_MODEL = "gemini-2.5-flash"
-
-# 語系對照配置
-LANG_CONFIG = {
-    "auto": {"google": "auto", "deepl": "auto", "name": "自動偵測的語言"},
-    "zh-TW": {"google": "zh-TW", "deepl": "ZH-HANT", "name": "繁體中文"},
-    "zh-CN": {"google": "zh-CN", "deepl": "ZH", "name": "簡體中文"},
-    "en": {"google": "en", "deepl": "EN", "name": "英文"},
-    "ja": {"google": "ja", "deepl": "JA", "name": "日文"},
-    "ko": {"google": "ko", "deepl": "KO", "name": "韓文"},
-    "fr": {"google": "fr", "deepl": "FR", "name": "法文"},
-    "de": {"google": "de", "deepl": "DE", "name": "德文"},
-    "es": {"google": "es", "deepl": "ES", "name": "西班牙文"}
-}
-
-# ========== 結構化行業領域設定（大模型最佳化版） ==========
-DOMAIN_CONFIG = {
-    "general": {
-        "role": "你是一位精準、專業的母語級翻譯專家。",
-        "rules": ["保持語氣自然流暢，符合目標語言的日常表達與文本習慣。"]
-    },
-    "travel": {
-        "role": "你是一位擁有多年經驗的專業旅遊與觀光雜誌編譯。",
-        "rules": ["請使用常用的旅遊、觀光、餐飲、航空及交通等相關專業詞彙。", "口吻要生動且吸引人。"]
-    },
-    "baseball": {
-        "role": "你是一位專業的體育記者與棒球轉播翻譯員。你精通棒球各項戰術、紀錄與術語。",
-        "rules": ["必須嚴格遵守下方的【術語對照表】，不得使用非棒球圈的通用詞彙。", "語氣要帶有體育賽事的動態感與現場感。"],
-        "glossary": """
-| 英文術語 | 翻譯規範（繁體中文） |
-| :--- | :--- |
-| pitch | 投球 / 投出的球 |
-| strike / strike two | 好球 / 兩好球 |
-| ball | 壞球 |
-| home run | 全壘打 |
-| RBI / ERA | 打點 / 防禦率 |
-| bullpen / closer | 牛棚 / 終結者 |
-| sinker / fastball / curveball | 伸卡球 / 快速球 / 曲球 |
-| slider / changeup | 滑球 / 變速球 |
-| walk / strikeout / double play | 保送 / 三振 / 雙殺 |
-| batting average / on-base percentage | 打擊率 / 上壘率 |
-| slugging percentage | 長打率 |
-| pitcher / batter / catcher | 投手 / 打者 / 捕手 |
-| infield / outfield | 內野 / 外野 |
-| dugout / mound / plate | 休息區 / 投手丘 / 本壘板 |
-| count / full count / payoff | 球數 / 滿球數 / 滿球數對決 |
-| swing / miss / location | 揮棒 / 揮空 / 進壘點 |
-| put away | 解決（打者） |
-| back him up | 掩護 / 支援 |
-""",
-        "examples": """
-【雙語對齊範例】
-- "backed him up with strike two" ➔ "用兩好球掩護他"
-- "put him away with the sinker" ➔ "用伸卡球解決他"
-- "full payoff got him swinging" ➔ "滿球數對決使他揮空"
-"""
-    },
-    "basketball": {
-        "role": "你是一位專業的籃球評述員與 NBA 賽事專職翻譯。",
-        "rules": ["嚴格遵守以下籃球核心術語：Rebound=籃板、Assist=助攻、Turnover=失誤、Fast Break=快攻、Paint=禁區、Steal=抄截、Block=阻攻、Air Ball=籃外空心。"]
-    },
-    "gaming": {
-        "role": "你是一位資深的遊戲在地化（Localization）專家，精通各大 3A 遊戲、RPG 與電競術語。",
-        "rules": ["必須嚴格使用玩家遊戲圈的常用習慣詞彙，避免生硬的字面直譯。"],
-        "glossary": """
-| 術語 | 翻譯規範 |
-| :--- | :--- |
-| HP / MP / XP | 生命值 / 法力值 / 經驗值 |
-| NPC / Boss | 非玩家角色 / 頭目（或王） |
-| PvP / PvE | 玩家對戰 / 玩家對環境 |
-| Respawn / Lag | 重生 / 延遲（或卡頓） |
-"""
-    },
-    "news": {
-        "role": "你是一位國際新聞社的資深編譯。",
-        "rules": ["請使用客觀、中立、正式的新聞報導用語，結構嚴謹，完全避免口語化表達。"]
-    },
-    "entertainment": {
-        "role": "你是一位綜藝節目、影視娛樂與演藝圈的資深追星族兼專業翻譯。",
-        "rules": ["請使用演藝圈、影視特效、流行網絡梗與綜藝常見的生動詞彙。"]
-    },
-    "mechanical": {
-        "role": "你是一位精密機械工程翻譯專家，擁有工廠實務與論文編譯背景。",
-        "rules": ["請使用精確的機械專業工程術語：CNC=CNC加工、Bearing=軸承、Torque=扭矩、Tolerance=公差、Fixture=治具、Gear=齒輪、Shaft=軸。"]
-    },
-    "semiconductor": {
-        "role": "你是一位在晶圓代工大廠工作多年的資深製程工程師與半導體產業編譯。",
-        "rules": ["保持業界高度專業口吻。", "當業界習慣直接使用英文簡稱或專有名詞時，請直接保留（例如 Fab、Wafer、Tape-out、Die），不需強行死譯。"],
-        "glossary": """
-| 專有名詞 | 翻譯規範 |
-| :--- | :--- |
-| Wafer / Yield | 晶圓 / 良率 |
-| Packaging / Fab | 封裝 / 晶圓廠 |
-| Process Node | 製程節點 |
-| Etching | 蝕刻 |
-"""
-    },
-    "medical": {
-        "role": "你是一位醫療與臨床醫學文獻翻譯專家。",
-        "rules": ["必須使用標準、公認的醫學術語，確保病理、藥名及臨床表現的絕對準確性。"]
-    },
-    "legal": {
-        "role": "你是一位精通跨國商業合約與訴訟文件的法律翻譯官員。",
-        "rules": ["使用極度嚴謹、精確的法律法規專業辭彙，結構必須與法條習慣完全對齊。"]
-    },
-    "it": {
-        "role": "你是一位資深全端工程師與資訊科技（IT）技術文件作家。",
-        "rules": ["請使用 IT 軟體業界與開發者常用詞彙：API=應用程式介面、Database=資料庫、Server=伺服器、Frontend=前端、Backend=後端。"]
-    },
-    "finance": {
-        "role": "你是一位特許金融分析師（CFA）兼財經新聞主編。",
-        "rules": ["請精確使用金融與證券市場術語：Equity=股權、Bond=債券、Derivative=衍生品、Hedge=避險、Dividend=股息。"]
-    }
-}
-
-def generate_dynamic_prompt(domain, src_name, tgt_name):
-    """根據行業別與語系，動態生成結構完美的系統指令"""
-    config = DOMAIN_CONFIG.get(domain, DOMAIN_CONFIG["general"])
-    
-    role = config.get("role", "")
-    rules = config.get("rules", [])
-    glossary = config.get("glossary", "")
-    examples = config.get("examples", "")
-    
-    rule_text = ""
-    for idx, rule in enumerate(rules, 1):
-        rule_text += f"{idx}. {rule}\n"
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+     <link rel="apple-touch-icon" href="多語言翻譯.png">
+    <title>智慧翻譯 | 多引擎 + 雙語SRT</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
         
-    prompt = (
-        f"【角色設定】\n{role}\n\n"
-        f"【核心任務】\n"
-        f"你唯一的任務是將輸入的「{src_name}」內容精準翻譯成「{tgt_name}」。\n"
-        f"【嚴格遵守規則】\n"
-        f"{rule_text}"
-        f"*. 絕對不要輸出任何自我介紹、前言、解釋、說明或包含前後引號，你只需要直接輸出翻譯後的結果。\n"
-    )
-    
-    if glossary:
-        prompt += f"\n【專有名詞與專業術語對照表】\n{glossary}\n"
-    if examples:
-        prompt += f"\n{examples}\n"
-        
-    return prompt
-
-# ========== 各大引擎基礎翻譯函數 ==========
-
-def translate_google_with_retry(text, src, tgt, retries=3, delay=1):
-    for i in range(retries):
-        try:
-            src_code = LANG_CONFIG.get(src, {}).get("google", "auto")
-            tgt_code = LANG_CONFIG.get(tgt, {}).get("google", "en")
-            url = f"https://translate.googleapis.com/translate_a/single?client=gtx&sl={src_code}&tl={tgt_code}&dt=t&q={requests.utils.quote(text)}"
-            resp = requests.get(url, timeout=20)
-            if resp.status_code == 200:
-                data = resp.json()
-                return "".join(part[0] for part in data[0] if part[0]) or text
-        except Exception as e:
-            app.logger.warning(f"Google 翻譯嘗試 {i+1} 異常: {e}")
-        if i < retries - 1:
-            time.sleep(delay)
-    raise Exception("Google 翻譯重試失敗")
-
-def translate_google(text, src, tgt):
-    return translate_google_with_retry(text, src, tgt)
-
-def translate_deepl(text, src, tgt, api_key):
-    if not api_key:
-        raise ValueError("DeepL API Key 未設定")
-    tgt_code = LANG_CONFIG[tgt]["deepl"]
-    src_code = LANG_CONFIG[src]["deepl"]
-    if src_code == "ZH-HANT":
-        src_code = "ZH"
-    params = {"text": text, "target_lang": tgt_code}
-    if src_code and src_code != "auto":
-        params["source_lang"] = src_code
-    headers = {"Authorization": f"DeepL-Auth-Key {api_key}"}
-    resp = requests.post("https://api-free.deepl.com/v2/translate", data=params, headers=headers, timeout=20)
-    resp.raise_for_status()
-    return resp.json()["translations"][0]["text"]
-
-def translate_gemini(text, src, tgt, api_key, domain="general"):
-    if not api_key:
-        raise ValueError("Gemini API Key 未設定")
-        
-    src_name = LANG_CONFIG.get(src, {}).get("name", src)
-    tgt_name = LANG_CONFIG.get(tgt, {}).get("name", tgt)
-    
-    system_instruction = generate_dynamic_prompt(domain, src_name, tgt_name)
-    
-    url = f"https://generativelanguage.googleapis.com/v1/models/{DEFAULT_GEMINI_MODEL}:generateContent?key={api_key}"
-    payload = {
-        "contents": [{"parts": [{"text": text}]}],
-        "systemInstruction": {"parts": [{"text": system_instruction}]},
-        "generationConfig": {
-            "temperature": 0.3, 
-            "maxOutputTokens": 2000
+        /* 🎨 全域黑體化與深色對比控制 */
+        body { 
+            background: #f5f7fb; 
+            font-family: "Microsoft JhengHei", "Heiti TC", "Apple LiGothic", system-ui, sans-serif !important; 
+            font-weight: 600 !important;
+            color: #111827 !important;
+            padding: 0; 
         }
-    }
-    
-    resp = requests.post(url, json=payload, timeout=25)
-    if resp.status_code != 200:
-        raise Exception(f"Gemini API 錯誤 {resp.status_code}: {resp.text}")
-        
-    data = resp.json()
-    try:
-        result = data["candidates"][0]["content"]["parts"][0]["text"]
-        return result.strip()
-    except (KeyError, IndexError):
-        raise Exception("無法解析 Gemini 單句回應")
+        .container { max-width: 800px; margin: 0 auto; padding: 16px; }
 
+        .accordion { background: white; border-radius: 24px; margin-bottom: 20px; overflow: hidden; box-shadow: 0 2px 8px rgba(0,0,0,0.05); }
+        .accordion-header { background: #fff; padding: 14px 18px; cursor: pointer; font-weight: 700; display: flex; justify-content: space-between; border-bottom: 1px solid #eef2f6; font-size: 1rem; }
+        .accordion-header .arrow { transition: transform 0.3s; }
+        .accordion.hide .accordion-content { display: none; }
+        .accordion.hide .arrow { transform: rotate(-90deg); }
+        .accordion-content { padding: 16px; }
 
-# ================== 全新核心：Gemini SRT 批次脈絡翻譯 ==================
-def translate_gemini_batch(subtitles, src, tgt, api_key, domain="general"):
-    """
-    將全部字幕打包為 JSON 一次性交給 Gemini，保留完整情境且不漏單。
-    """
-    if not api_key:
-        raise ValueError("Gemini API Key 未設定")
-    if not subtitles:
-        return []
+        .api-group { display: flex; flex-wrap: wrap; gap: 10px; align-items: flex-end; }
+        .input-flex { flex: 2; min-width: 160px; }
         
-    src_name = LANG_CONFIG.get(src, {}).get("name", src)
-    tgt_name = LANG_CONFIG.get(tgt, {}).get("name", tgt)
-    
-    base_instruction = generate_dynamic_prompt(domain, src_name, tgt_name)
-    batch_instruction = (
-        f"{base_instruction}\n"
-        "【批次 JSON 翻譯規範】\n"
-        "1. 使用者會提供一個 JSON 陣列，包含多個物件，每個物件有 'id' 與 'text'。\n"
-        "2. 請必須保留原本的 'id'，並將 'text' 欄位內文字翻譯成目標語言。\n"
-        "3. 請嚴格返回一個合法的標準 JSON 陣列，格式與輸入完全相同，如：[{\"id\": \"1\", \"text\": \"翻譯後的文字\"}]。\n"
-        "4. 絕對不要包含任何 markdown 標記（如 ```json），直接輸出 JSON 原始字串。"
-    )
-    
-    input_data = [{"id": str(sub.get("id")), "text": sub.get("text", "")} for sub in subtitles]
-    input_json_str = json.dumps(input_data, ensure_ascii=False)
-    
-    url = f"[https://generativelanguage.googleapis.com/v1/models/](https://generativelanguage.googleapis.com/v1/models/){DEFAULT_GEMINI_MODEL}:generateContent?key={api_key}"
-    payload = {
-        "contents": [{"parts": [{"text": input_json_str}]}],
-        "systemInstruction": {"parts": [{"text": batch_instruction}]},
-        "generationConfig": {
-            "temperature": 0.3,
-            "responseMimeType": "application/json"
+        /* 📝 按鈕全系列加粗與對比調校 */
+        button { 
+            background: #eef2f8; 
+            border: 2px solid #cbd5e1; 
+            padding: 8px 16px; 
+            border-radius: 40px; 
+            cursor: pointer; 
+            font-size: 0.9rem; 
+            font-weight: 700 !important;
+            color: #1e293b;
+            transition: all 0.2s; 
         }
-    }
+        button:hover { background: #e1e9f3; border-color: #94a3b8; }
+        button.primary { background: #2c3e66; color: white; border: none; }
+        button.primary:hover { background: #1f2d4d; }
+        button.danger { background: #fff0f0; border-color: #fca5a5; color: #991b1b; }
+        button.danger:hover { background: #ffeeee; border-color: #f87171; }
+        
+        /* 📥 輸入框與下拉選單增強 */
+        input, select { 
+            width: 100%; 
+            padding: 10px 14px; 
+            border-radius: 30px; 
+            border: 2px solid #cbd5e1; 
+            font-size: 0.95rem; 
+            font-weight: 700 !important;
+            color: #111827;
+            background: white; 
+        }
+        input:focus, select:focus { border-color: #2c3e66; outline: none; }
+        label { font-size: 0.85rem; font-weight: 700; color: #1e293b; margin-bottom: 6px; display: block; }
+
+        .translate-card { background: white; border-radius: 24px; padding: 16px; margin-bottom: 16px; box-shadow: 0 2px 8px rgba(0,0,0,0.02); }
+        .box-header { display: flex; justify-content: space-between; margin-bottom: 12px; flex-wrap: wrap; gap: 8px; }
+        .lang-row { display: flex; gap: 12px; margin-bottom: 12px; flex-wrap: wrap; }
+        .lang-item { flex: 1; min-width: 120px; }
+        
+        /* 📺 核心優化：大黑體高對比字幕文字框 */
+        textarea { 
+            width: 100%; 
+            padding: 14px; 
+            border-radius: 20px; 
+            border: 2px solid #cbd5e1; 
+            font-size: 16px !important; 
+            font-weight: 700 !important;
+            line-height: 1.6 !important;
+            color: #000000 !important;
+            min-height: 180px; 
+            resize: vertical; 
+            font-family: "Microsoft JhengHei", monospace !important; 
+        }
+        textarea:focus { border-color: #2c3e66; outline: none; }
+
+        .translate-bar { text-align: center; margin: 8px 0 16px; }
+        /* ⚡ 開始翻譯大按鈕 */
+        .btn-translate { 
+            background: #2c3e66; 
+            color: white; 
+            padding: 14px 28px; 
+            border-radius: 60px; 
+            width: 80%; 
+            max-width: 280px; 
+            border: none; 
+            font-weight: 800 !important; 
+            font-size: 1.1rem; 
+            letter-spacing: 1px;
+            cursor: pointer; 
+            box-shadow: 0 4px 14px rgba(44,62,102,0.3); 
+        }
+        .btn-translate:hover { background: #1f2d4d; transform: scale(1.02); }
+
+        /* 🟢 訊息欄大字特粗體 */
+        .message { 
+            background: #eef2fa; 
+            border-radius: 20px; 
+            padding: 12px 18px; 
+            margin-top: 12px; 
+            border-left: 6px solid #2c3e66; 
+            font-size: 0.95rem; 
+            font-weight: 700 !important;
+            color: #1e3a8a !important;
+        }
+        .error { background: #fef2f2; border-left-color: #ef4444; color: #991b1b !important; }
+        .warning { background: #fffbeb; border-left-color: #f59e0b; color: #78350f !important; }
+
+        .srt-mode-box { background: #eafeff; border-radius: 20px; padding: 16px; margin: 12px 0; border: 2px dashed #06b6d4; }
+        .srt-mode { display: flex; gap: 20px; align-items: center; flex-wrap: wrap; font-size: 1rem; }
+        .srt-mode label { display: inline-flex; align-items: center; gap: 6px; font-size: 1rem; font-weight: 700; cursor: pointer; color: #0f172a; margin-bottom: 0; }
+        .srt-mode input[type="checkbox"] { width: 20px; height: 20px; margin: 0; cursor: pointer; }
+        .srt-layout-select { width: auto; padding: 6px 14px; border-radius: 15px; font-size: 0.9rem; }
+        .srt-hint { font-size: 0.85rem; color: #ea580c; margin-top: 8px; display: block; font-weight: 700; }
+
+        footer { text-align: center; font-size: 0.8rem; color: #374151; font-weight: 700; margin-top: 24px; line-height: 1.6; }
+
+        @media (max-width: 640px) {
+            .container { padding: 12px; }
+            .lang-row { flex-direction: column; gap: 8px; }
+            .srt-mode { flex-direction: column; align-items: flex-start; gap: 10px; }
+        }
+    </style>
+</head>
+<body>
+<div class="container">
+    <div class="accordion hide" id="keyAccordion"> 
+        <div class="accordion-header" id="accordionToggle">
+            <span>🔑 API 金鑰設定 (Gemini + DeepL 選用)</span>
+            <span class="arrow">▼</span>
+        </div>
+        <div class="accordion-content">
+            <div style="margin-bottom: 20px;">
+                <label>✨ Google Gemini API Key (推薦：批次高速翻譯)</label>
+                <div class="api-group">
+                    <div class="input-flex"><input type="password" id="geminiKey" placeholder="輸入 Gemini Key"></div>
+                    <button id="saveGemini" class="primary">💾 儲存</button>
+                    <button id="clearGemini" class="danger">🗑️ 清除</button>
+                </div>
+                <div id="geminiStatus" style="font-size:0.8rem; margin-top:6px; font-weight:bold;"></div>
+            </div>
+            <hr style="border: none; border-top: 1px solid #eef2f6; margin: 12px 0;">
+            <div>
+                <label>🌐 DeepL API Key (選填)</label>
+                <div class="api-group">
+                    <div class="input-flex"><input type="password" id="deeplKey" placeholder="輸入 DeepL Key"></div>
+                    <button id="saveDeepl" class="primary">💾 儲存</button>
+                    <button id="clearDeepl" class="danger">🗑️ 清除</button>
+                </div>
+                <div id="deeplStatus" style="font-size:0.8rem; margin-top:6px; font-weight:bold;"></div>
+            </div>
+            <div class="message">💡 策略：Gemini 優先 (開放 SRT 批次) → 英法德用 Google；日韓有 DeepL Key 優先。</div>
+        </div>
+    </div>
+
+    <div class="translate-card">
+        <div class="lang-row">
+            <div class="lang-item">
+                <label>📖 來源語言</label>
+                <select id="sourceLang"></select>
+            </div>
+            <div class="lang-item">
+                <label>🏷️ 行業領域（影響 Gemini）</label>
+                <select id="domainSelect">
+                    <option value="general">一般翻譯</option>
+                    <option value="travel">旅遊</option>
+                    <option value="baseball">棒球</option>
+                    <option value="basketball">籃球</option>
+                    <option value="gaming">遊戲</option>
+                    <option value="news">新聞</option>
+                    <option value="entertainment">娛樂</option>
+                    <option value="mechanical">機械</option>
+                    <option value="semiconductor">半導體</option>
+                    <option value="medical">醫療</option>
+                    <option value="legal">法律</option>
+                    <option value="it">資訊科技</option>
+                    <option value="finance">金融</option>
+                </select>
+            </div>
+            <div class="lang-item">
+                <label>🎯 目標語言</label>
+                <select id="targetLang"></select>
+            </div>
+        </div>
+
+        <div class="box-header">
+            <div style="flex:1"></div>
+            <div>
+                <button id="pasteBtn">📋 貼上</button>
+                <button id="fileBtn">📂 開啟檔案</button>
+                <button id="clearSource" class="danger">清除</button>
+                <input type="file" id="fileInput" accept=".txt,.md,.csv,.srt" style="display: none;">
+            </div>
+        </div>
+        <textarea id="sourceText" placeholder="輸入要翻譯的文字... (若要處理 SRT 字幕，請勾選下方模式)"></textarea>
+        <div style="font-size:0.85rem; color:#1e3a8a; margin-top:8px; font-weight:bold;">💡 提示：若貼上 SRT 字幕內容，請務必勾選下方「SRT 字幕模式」，以啟用高效批次上下文翻譯。</div>
+    </div>
+
+    <div class="srt-mode-box">
+        <div class="srt-mode">
+            <label>
+                <input type="checkbox" id="srtModeCheckbox"> 🎞️ <strong>開啟 SRT 字幕模式</strong> (保留時間軸)
+            </label>
+            
+            <div id="srtOptions" style="display: inline-flex; align-items: center; gap: 8px; opacity: 0.5; pointer-events: none;">
+                <label>樣式版面：</label>
+                <select id="srtLayoutSelect" class="srt-layout-select">
+                    <option value="original_first">雙語（原文在上、譯文在下）</option>
+                    <option value="translated_first">雙語（譯文在上、原文在下）</option>
+                    <option value="translated_only">單語（僅保留翻譯後的譯文）</option>
+                </select>
+            </div>
+        </div>
+        <span class="srt-hint">⚠️ 注意：非 SRT 格式文字請勿勾選。啟用後將自動進行「整批上下文優化翻譯」，速度極快且語意連貫。</span>
+    </div>
+
+    <div class="translate-bar">
+        <button id="translateBtn" class="btn-translate">✨ 開始翻譯</button>
+    </div>
+
+    <div id="messageBox" class="message">✅ 就緒 | 引擎: Gemini 優先 → 英法德:Google / 日韓:DeepL(有Key) → Google降級</div>
+    <footer>金鑰僅儲存於個人瀏覽器 LocalStorage，並加密傳送至後端（後端不記錄）<br>SRT 翻譯結果會直接顯示在下方「翻譯結果」區，可直接複製貼上使用。</footer>
     
-    retries = 3
-    for i in range(retries):
-        try:
-            app.logger.info(f"開始傳送 Gemini 批次翻譯，共 {len(subtitles)} 條字幕...")
-            resp = requests.post(url, json=payload, timeout=60)
-            
-            if resp.status_code == 429:
-                app.logger.warning(f"觸發 Gemini 限流 (429)，休眠 10 秒後重試...")
-                time.sleep(10)
-                continue
-                
-            if resp.status_code != 200:
-                raise Exception(f"Gemini API 錯誤 {resp.status_code}: {resp.text}")
-                
-            data = resp.json()
-            result_text = data["candidates"][0]["content"]["parts"][0]["text"].strip()
-            
-            translated_list = json.loads(result_text)
-            result_map = {str(item["id"]): item["text"] for item in translated_list if "id" in item and "text" in item}
-            
-            for sub in subtitles:
-                sub_id = str(sub.get("id"))
-                if sub_id in result_map:
-                    sub["text"] = result_map[sub_id]
-                    
-            return subtitles
-            
-        except Exception as e:
-            app.logger.error(f"Gemini 批次翻譯嘗試第 {i+1} 次失敗: {e}")
-            if i == retries - 1:
-                raise e
-            time.sleep(5)
+    <div class="translate-card" style="margin-top: 16px;">
+        <div class="box-header">
+            <div style="flex:1"></div>
+            <div><button id="copyBtn">📋 複製結果</button><button id="clearTarget" class="danger">清除</button></div>
+        </div>
+        <textarea id="targetText" placeholder="翻譯結果..." readonly></textarea>
+    </div>
+</div>
 
+<script>
+    // 加上 auto 讓大模型自己抓語系，對字幕特別方便
+    const SRC_LANG_LIST = [
+        { code: "auto", name: "🤖 自動偵測語言" },
+        { code: "zh-TW", name: "繁體中文" }, { code: "zh-CN", name: "簡體中文" },
+        { code: "en", name: "英文" }, { code: "ja", name: "日文" },
+        { code: "ko", name: "韓文" }, { code: "fr", name: "法文" }, { code: "de", name: "德文" }, { code: "es", name: "西班牙文" }
+    ];
+    const TGT_LANG_LIST = SRC_LANG_LIST.slice(1); // 目標語言不需要自動偵測
 
-# ================== 核心優化：SRT 格式解析與重組工具 ==================
-def parse_srt(srt_text):
-    """將原始 SRT 字串解析為結構化字典列表"""
-    blocks = re.split(r'\n\s*\n', srt_text.strip())
-    subtitles = []
-    for block in blocks:
-        lines = block.strip().split('\n')
-        if len(lines) >= 3:
-            sub_id = lines[0].strip()
-            time_line = lines[1].strip()
-            text_content = "\n".join(lines[2:])
-            subtitles.append({
-                "id": sub_id,
-                "time": time_line,
-                "text": text_content,
-                "original_text": text_content  # 保留原文供雙語版面使用
-            })
-    return subtitles
-
-def rebuild_srt(subtitles, layout_mode):
-    """根據前端選擇的版面配置模式，重新組裝成標準 SRT 格式"""
-    output = []
-    for sub in subtitles:
-        orig = sub.get("original_text", "")
-        trans = sub.get("text", "")
+    function populateSelects() {
+        const source = document.getElementById('sourceLang');
+        const target = document.getElementById('targetLang');
         
-        # 版面配置邏輯控管
-        if layout_mode == "original_first":
-            merged_text = f"{orig}\n{trans}" if orig != trans else trans
-        elif layout_mode == "translated_first":
-            merged_text = f"{trans}\n{orig}" if orig != trans else trans
-        else:  # translated_only
-            merged_text = trans
+        source.innerHTML = SRC_LANG_LIST.map(l => `<option value="${l.code}">${l.name}</option>`).join('');
+        target.innerHTML = TGT_LANG_LIST.map(l => `<option value="${l.code}">${l.name}</option>`).join('');
+        
+        source.value = "auto"; // 預設改為自動偵測
+        target.value = "zh-TW";
+    }
+    populateSelects();
+
+    // 金鑰管理
+    const geminiInput = document.getElementById('geminiKey');
+    const deeplInput = document.getElementById('deeplKey');
+    const geminiStatus = document.getElementById('geminiStatus');
+    const deeplStatus = document.getElementById('deeplStatus');
+    
+    function loadKeys() {
+        const g = localStorage.getItem('gemini_key');
+        const d = localStorage.getItem('deepl_key');
+        if (g) { geminiInput.value = g; geminiStatus.innerText = '✅ 已載入'; }
+        if (d) { deeplInput.value = d; deeplStatus.innerText = '✅ 已載入'; }
+    }
+    document.getElementById('saveGemini').onclick = () => { let k = geminiInput.value.trim(); if(k){ localStorage.setItem('gemini_key', k); geminiStatus.innerText = '✅ 已儲存'; } };
+    document.getElementById('clearGemini').onclick = () => { localStorage.removeItem('gemini_key'); geminiInput.value = ''; geminiStatus.innerText = '🧹 已清除'; };
+    document.getElementById('saveDeepl').onclick = () => { let k = deeplInput.value.trim(); if(k){ localStorage.setItem('deepl_key', k); deeplStatus.innerText = '✅ 已儲存'; } };
+    document.getElementById('clearDeepl').onclick = () => { localStorage.removeItem('deepl_key'); deeplInput.value = ''; deeplStatus.innerText = '🧹 已清除'; };
+    loadKeys();
+
+    const sourceText = document.getElementById('sourceText');
+    const targetText = document.getElementById('targetText');
+    const sourceLang = document.getElementById('sourceLang');
+    const targetLang = document.getElementById('targetLang');
+    const msgBox = document.getElementById('messageBox');
+    const domainSelect = document.getElementById('domainSelect');
+    const srtModeCheckbox = document.getElementById('srtModeCheckbox');
+    const srtOptions = document.getElementById('srtOptions');
+    const srtLayoutSelect = document.getElementById('srtLayoutSelect');
+    const translateBtn = document.getElementById('translateBtn');
+
+    function setMsg(msg, type='info') {
+        msgBox.innerHTML = msg;
+        msgBox.classList.remove('error', 'warning');
+        if (type === 'error') msgBox.classList.add('error');
+        else if (type === 'warning') msgBox.classList.add('warning');
+    }
+
+    // UI 連動：勾選 SRT 模式時亮起選單
+    srtModeCheckbox.onchange = () => {
+        if (srtModeCheckbox.checked) {
+            srtOptions.style.opacity = "1";
+            srtOptions.style.pointerEvents = "auto";
+            translateBtn.innerText = "🎞️ 開始字幕批次翻譯";
+        } else {
+            srtOptions.style.opacity = "0.5";
+            srtOptions.style.pointerEvents = "none";
+            translateBtn.innerText = "✨ 開始翻譯";
+        }
+    };
+
+    // 輔助工具按鈕
+    document.getElementById('pasteBtn').onclick = async () => { try { const t = await navigator.clipboard.readText(); sourceText.value = t; setMsg('已貼上'); } catch(e){ setMsg('無法讀取剪貼簿', 'error'); } };
+    document.getElementById('clearSource').onclick = () => { sourceText.value = ''; setMsg('原文已清除'); };
+    document.getElementById('copyBtn').onclick = async () => { if(targetText.value) { await navigator.clipboard.writeText(targetText.value); setMsg('📋 翻譯結果已成功複製到剪貼簿！'); } };
+    document.getElementById('clearTarget').onclick = () => { targetText.value = ''; setMsg('結果已清除'); };
+    
+    // 檔案拖放/上傳
+    const fileBtn = document.getElementById('fileBtn');
+    const fileInput = document.getElementById('fileInput');
+    fileBtn.onclick = () => fileInput.click();
+    fileInput.onchange = (event) => {
+        const file = event.target.files[0];
+        if (!file) return;
+        if (file.size > 5 * 1024 * 1024) { setMsg('檔案過大，請選擇小於 5MB 的文字檔', 'error'); fileInput.value = ''; return; }
+        
+        // 如果檔名是 .srt，自動勾選 SRT 模式
+        if (file.name.toLowerCase().endsWith('.srt')) {
+            srtModeCheckbox.checked = true;
+            srtModeCheckbox.onchange();
+        }
+
+        const reader = new FileReader();
+        reader.onload = (e) => { sourceText.value = e.target.result; setMsg(`✅ 已開啟檔案：${file.name} (${(file.size/1024).toFixed(1)} KB)`); };
+        reader.onerror = () => setMsg('❌ 檔案讀取失敗', 'error');
+        reader.readAsText(file, 'UTF-8');
+    };
+    
+    const accordion = document.getElementById('keyAccordion');
+    document.getElementById('accordionToggle').onclick = () => accordion.classList.toggle('hide');
+
+    // 翻譯主發送邏輯
+    translateBtn.onclick = async () => {
+        const text = sourceText.value.trim();
+        if (!text) { setMsg('請輸入內容', 'error'); return; }
+        const tgt = targetLang.value;
+        const src = sourceLang.value;
+        const domain = domainSelect.value;
+        const gemini_key = localStorage.getItem('gemini_key') || '';
+        const deepl_key = localStorage.getItem('deepl_key') || '';
+
+        // 1. 普通文字翻譯模式
+        if (!srtModeCheckbox.checked) {
+            if (src === tgt && src !== 'auto') { targetText.value = text; setMsg('來源與目標語言相同'); return; }
+            targetText.value = '⏳ 正在通訊並翻譯文字，請稍候...';
+            setMsg('🔄 呼叫後端 API 中...');
+            try {
+                const res = await fetch('/translate', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ text, source_lang: src, target_lang: tgt, gemini_key, deepl_key, domain })
+                });
+                const data = await res.json();
+                if (!res.ok) throw new Error(data.error || '翻譯請求失敗');
+                targetText.value = data.result;
+                setMsg(`✅ 完成 (引擎: ${data.engine})`);
+            } catch (err) {
+                targetText.value = '❌ 發生錯誤';
+                setMsg(`錯誤: ${err.message}`, 'error');
+            }
+            return;
+        }
+
+        // 2. SRT 字幕批次優化模式
+        targetText.value = '⏳ 正在解析 SRT 格式並執行高精度批次上下文翻譯... (大文件大約需要 5~15 秒)';
+        setMsg('🔄 SRT 批次翻譯發送中，請勿關閉視窗...');
+        try {
+            const response = await fetch('/translate_srt', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    srt_content: text,
+                    gemini_key: gemini_key,
+                    deepl_key: deepl_key,
+                    target_lang: tgt,
+                    source_lang: src,
+                    domain: domain,
+                    layout_mode: srtLayoutSelect.value 
+                })
+            });
+            const data = await response.json();
+            if (!response.ok) throw new Error(data.error || `HTTP 錯誤狀態碼: ${response.status}`);
             
-        output.append(f"{sub['id']}\n{sub['time']}\n{merged_text}")
-    return "\n\n".join(output)
-
-
-# ================== API 路由控制端點 ==================
-
-# 🌟 關鍵修正：解決 Render 部署 404 錯誤的首頁路由
-@app.route('/')
-def index():
-    """當使用者訪問根目錄時，正確傳回 index.html"""
-    return send_from_directory(app.static_folder, 'index.html')
-
-@app.route('/translate', methods=['POST'])
-def translate_endpoint():
-    """普通文字翻譯端點"""
-    try:
-        req_data = request.json or {}
-        text = req_data.get("text", "")
-        src = req_data.get("source_lang", "auto")
-        tgt = req_data.get("target_lang", "zh-TW")
-        domain = req_data.get("domain", "general")
-        user_gemini_key = req_data.get("gemini_key", "")
-        user_deepl_key = req_data.get("deepl_key", "")
-        
-        gemini_key = user_gemini_key if user_gemini_key else ENV_GEMINI_KEY
-        deepl_key = user_deepl_key if user_deepl_key else ENV_DEEPL_KEY
-        
-        if gemini_key:
-            res = translate_gemini(text, src, tgt, gemini_key, domain)
-            return jsonify({"status": "success", "engine": "gemini", "result": res})
-        elif deepl_key and tgt in ["ja", "ko"]:
-            res = translate_deepl(text, src, tgt, deepl_key)
-            return jsonify({"status": "success", "engine": "deepl", "result": res})
-        else:
-            res = translate_google(text, src, tgt)
-            return jsonify({"status": "success", "engine": "google", "result": res})
-    except Exception as e:
-        app.logger.error(traceback.format_exc())
-        return jsonify({"error": str(e)}), 500
-
-@app.route('/api/translate_srt', methods=['POST'])
-@app.route('/translate_srt', methods=['POST']) # 同時相容前後端路由命名
-def translate_srt_endpoint():
-    """SRT 字幕專用批次翻譯端點"""
-    try:
-        req_data = request.json or {}
-        srt_content = req_data.get("srt_content", "")
-        src = req_data.get("source_lang", "auto")
-        tgt = req_data.get("target_lang", "zh-TW")
-        domain = req_data.get("domain", "general")
-        layout_mode = req_data.get("layout_mode", "original_first")
-        user_gemini_key = req_data.get("gemini_key", "")
-        
-        gemini_key = user_gemini_key if user_gemini_key else ENV_GEMINI_KEY
-        
-        # 1. 解析 SRT
-        subtitles = parse_srt(srt_content)
-        if not subtitles:
-            return jsonify({"error": "未能成功解析任何 SRT 字幕，請確認格式"}), 400
-            
-        engine_used = "google"
-        
-        # 2. 決定翻譯策略：有 Gemini Key 則直接啟用批次脈絡翻譯
-        if gemini_key:
-            try:
-                subtitles = translate_gemini_batch(subtitles, src, tgt, gemini_key, domain)
-                engine_used = "gemini"
-            except Exception as gemini_err:
-                app.logger.error(f"Gemini 批次翻譯失敗，全面啟用安全降級：{gemini_err}")
-                for sub in subtitles:
-                    sub["text"] = translate_google(sub["text"], src, tgt)
-                engine_used = "google (gemini 失敗降級)"
-        else:
-            # 無 Key 狀態直接走 Google 翻譯
-            for sub in subtitles:
-                sub["text"] = translate_google(sub["text"], src, tgt)
-                
-        # 3. 組裝並傳回結構
-        final_srt = rebuild_srt(subtitles, layout_mode)
-        return jsonify({
-            "status": "success",
-            "engine": engine_used,
-            "count": len(subtitles),
-            "srt_output": final_srt
-        })
-            
-    except Exception as e:
-        app.logger.error(traceback.format_exc())
-        return jsonify({"error": str(e)}), 500
-
-if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=5000, debug=True)
+            targetText.value = data.srt_output;
+            setMsg(`✅ SRT 批次翻譯成功！共處理解析了 ${data.count} 條字幕。使用引擎: ${data.engine}。`);
+        } catch (err) {
+            console.error('SRT 翻譯失敗:', err);
+            targetText.value = '❌ SRT 翻譯失敗，請檢查格式或金鑰狀態';
+            setMsg(`❌ SRT 處理失敗: ${err.message}`, 'error');
+        }
+    };
+</script>
+</body>
+</html>
