@@ -3,16 +3,23 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-     <!-- 🍎 Apple iOS PWA 主畫面圖示與標題設定 -->
-    <link rel="apple-touch-icon" href="多語言翻譯.png">
+     <link rel="apple-touch-icon" href="多語言翻譯.png">
     <title>智慧翻譯 | 多引擎 + 雙語SRT</title>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
-        body { background: #f5f7fb; font-family: system-ui, sans-serif; padding: 0; }
+        
+        /* 🎨 全域黑體化與深色對比控制 */
+        body { 
+            background: #f5f7fb; 
+            font-family: "Microsoft JhengHei", "Heiti TC", "Apple LiGothic", system-ui, sans-serif !important; 
+            font-weight: 600 !important;
+            color: #111827 !important;
+            padding: 0; 
+        }
         .container { max-width: 800px; margin: 0 auto; padding: 16px; }
 
         .accordion { background: white; border-radius: 24px; margin-bottom: 20px; overflow: hidden; box-shadow: 0 2px 8px rgba(0,0,0,0.05); }
-        .accordion-header { background: #fff; padding: 14px 18px; cursor: pointer; font-weight: 600; display: flex; justify-content: space-between; border-bottom: 1px solid #eef2f6; }
+        .accordion-header { background: #fff; padding: 14px 18px; cursor: pointer; font-weight: 700; display: flex; justify-content: space-between; border-bottom: 1px solid #eef2f6; font-size: 1rem; }
         .accordion-header .arrow { transition: transform 0.3s; }
         .accordion.hide .accordion-content { display: none; }
         .accordion.hide .arrow { transform: rotate(-90deg); }
@@ -20,37 +27,100 @@
 
         .api-group { display: flex; flex-wrap: wrap; gap: 10px; align-items: flex-end; }
         .input-flex { flex: 2; min-width: 160px; }
-        button { background: #eef2f8; border: 1px solid #dce3ec; padding: 8px 14px; border-radius: 40px; cursor: pointer; font-size: 0.8rem; transition: all 0.2s; }
-        button:hover { background: #e1e9f3; }
+        
+        /* 📝 按鈕全系列加粗與對比調校 */
+        button { 
+            background: #eef2f8; 
+            border: 2px solid #cbd5e1; 
+            padding: 8px 16px; 
+            border-radius: 40px; 
+            cursor: pointer; 
+            font-size: 0.9rem; 
+            font-weight: 700 !important;
+            color: #1e293b;
+            transition: all 0.2s; 
+        }
+        button:hover { background: #e1e9f3; border-color: #94a3b8; }
         button.primary { background: #2c3e66; color: white; border: none; }
         button.primary:hover { background: #1f2d4d; }
-        button.danger { background: #fff0f0; border-color: #ffcdcd; color: #b13e3e; }
-        button.danger:hover { background: #ffdada; }
-        input, select { width: 100%; padding: 10px 14px; border-radius: 30px; border: 1px solid #cfdde6; font-size: 0.9rem; background: white; }
-        label { font-size: 0.7rem; font-weight: 600; color: #4b5565; margin-bottom: 4px; display: block; }
+        button.danger { background: #fff0f0; border-color: #fca5a5; color: #991b1b; }
+        button.danger:hover { background: #ffeeee; border-color: #f87171; }
+        
+        /* 📥 輸入框與下拉選單增強 */
+        input, select { 
+            width: 100%; 
+            padding: 10px 14px; 
+            border-radius: 30px; 
+            border: 2px solid #cbd5e1; 
+            font-size: 0.95rem; 
+            font-weight: 700 !important;
+            color: #111827;
+            background: white; 
+        }
+        input:focus, select:focus { border-color: #2c3e66; outline: none; }
+        label { font-size: 0.85rem; font-weight: 700; color: #1e293b; margin-bottom: 6px; display: block; }
 
         .translate-card { background: white; border-radius: 24px; padding: 16px; margin-bottom: 16px; box-shadow: 0 2px 8px rgba(0,0,0,0.02); }
         .box-header { display: flex; justify-content: space-between; margin-bottom: 12px; flex-wrap: wrap; gap: 8px; }
         .lang-row { display: flex; gap: 12px; margin-bottom: 12px; flex-wrap: wrap; }
         .lang-item { flex: 1; min-width: 120px; }
-        textarea { width: 100%; padding: 14px; border-radius: 20px; border: 1px solid #e2e8f0; font-size: 1rem; min-height: 160px; resize: vertical; font-family: monospace; }
+        
+        /* 📺 核心優化：大黑體高對比字幕文字框 */
+        textarea { 
+            width: 100%; 
+            padding: 14px; 
+            border-radius: 20px; 
+            border: 2px solid #cbd5e1; 
+            font-size: 16px !important; 
+            font-weight: 700 !important;
+            line-height: 1.6 !important;
+            color: #000000 !important;
+            min-height: 180px; 
+            resize: vertical; 
+            font-family: "Microsoft JhengHei", monospace !important; 
+        }
+        textarea:focus { border-color: #2c3e66; outline: none; }
 
         .translate-bar { text-align: center; margin: 8px 0 16px; }
-        .btn-translate { background: #2c3e66; color: white; padding: 12px 24px; border-radius: 60px; width: 80%; max-width: 260px; border: none; font-weight: 600; font-size: 1rem; cursor: pointer; box-shadow: 0 4px 12px rgba(44,62,102,0.2); }
-        .btn-translate:hover { background: #1f2d4d; }
+        /* ⚡ 開始翻譯大按鈕 */
+        .btn-translate { 
+            background: #2c3e66; 
+            color: white; 
+            padding: 14px 28px; 
+            border-radius: 60px; 
+            width: 80%; 
+            max-width: 280px; 
+            border: none; 
+            font-weight: 800 !important; 
+            font-size: 1.1rem; 
+            letter-spacing: 1px;
+            cursor: pointer; 
+            box-shadow: 0 4px 14px rgba(44,62,102,0.3); 
+        }
+        .btn-translate:hover { background: #1f2d4d; transform: scale(1.02); }
 
-        .message { background: #eef2fa; border-radius: 20px; padding: 10px 16px; margin-top: 12px; border-left: 4px solid #5f7f9e; font-size: 0.8rem; }
-        .error { background: #ffefef; border-left-color: #d9534f; color: #a94442; }
-        .warning { background: #fff3cd; border-left-color: #ffc107; color: #856404; }
+        /* 🟢 訊息欄大字特粗體 */
+        .message { 
+            background: #eef2fa; 
+            border-radius: 20px; 
+            padding: 12px 18px; 
+            margin-top: 12px; 
+            border-left: 6px solid #2c3e66; 
+            font-size: 0.95rem; 
+            font-weight: 700 !important;
+            color: #1e3a8a !important;
+        }
+        .error { background: #fef2f2; border-left-color: #ef4444; color: #991b1b !important; }
+        .warning { background: #fffbeb; border-left-color: #f59e0b; color: #78350f !important; }
 
-        .srt-mode-box { background: #f0f4f8; border-radius: 20px; padding: 16px; margin: 12px 0; border: 1px dashed #cbd5e1; }
-        .srt-mode { display: flex; gap: 20px; align-items: center; flex-wrap: wrap; font-size: 0.95rem; }
-        .srt-mode label { display: inline-flex; align-items: center; gap: 6px; font-size: 0.95rem; font-weight: normal; cursor: pointer; color: #1f2937; margin-bottom: 0; }
-        .srt-mode input[type="checkbox"] { width: 18px; height: 18px; margin: 0; cursor: pointer; }
-        .srt-layout-select { width: auto; padding: 4px 12px; border-radius: 15px; font-size: 0.85rem; }
-        .srt-hint { font-size: 0.75rem; color: #e67e22; margin-top: 6px; display: block; font-weight: 500; }
+        .srt-mode-box { background: #eafeff; border-radius: 20px; padding: 16px; margin: 12px 0; border: 2px dashed #06b6d4; }
+        .srt-mode { display: flex; gap: 20px; align-items: center; flex-wrap: wrap; font-size: 1rem; }
+        .srt-mode label { display: inline-flex; align-items: center; gap: 6px; font-size: 1rem; font-weight: 700; cursor: pointer; color: #0f172a; margin-bottom: 0; }
+        .srt-mode input[type="checkbox"] { width: 20px; height: 20px; margin: 0; cursor: pointer; }
+        .srt-layout-select { width: auto; padding: 6px 14px; border-radius: 15px; font-size: 0.9rem; }
+        .srt-hint { font-size: 0.85rem; color: #ea580c; margin-top: 8px; display: block; font-weight: 700; }
 
-        footer { text-align: center; font-size: 0.7rem; color: #6c7a8e; margin-top: 24px; line-height: 1.5; }
+        footer { text-align: center; font-size: 0.8rem; color: #374151; font-weight: 700; margin-top: 24px; line-height: 1.6; }
 
         @media (max-width: 640px) {
             .container { padding: 12px; }
@@ -61,7 +131,8 @@
 </head>
 <body>
 <div class="container">
-    <div class="accordion hide" id="keyAccordion"> <div class="accordion-header" id="accordionToggle">
+    <div class="accordion hide" id="keyAccordion"> 
+        <div class="accordion-header" id="accordionToggle">
             <span>🔑 API 金鑰設定 (Gemini + DeepL 選用)</span>
             <span class="arrow">▼</span>
         </div>
@@ -73,7 +144,7 @@
                     <button id="saveGemini" class="primary">💾 儲存</button>
                     <button id="clearGemini" class="danger">🗑️ 清除</button>
                 </div>
-                <div id="geminiStatus" style="font-size:0.7rem; margin-top:6px;"></div>
+                <div id="geminiStatus" style="font-size:0.8rem; margin-top:6px; font-weight:bold;"></div>
             </div>
             <hr style="border: none; border-top: 1px solid #eef2f6; margin: 12px 0;">
             <div>
@@ -83,7 +154,7 @@
                     <button id="saveDeepl" class="primary">💾 儲存</button>
                     <button id="clearDeepl" class="danger">🗑️ 清除</button>
                 </div>
-                <div id="deeplStatus" style="font-size:0.7rem; margin-top:6px;"></div>
+                <div id="deeplStatus" style="font-size:0.8rem; margin-top:6px; font-weight:bold;"></div>
             </div>
             <div class="message">💡 策略：Gemini 優先 (開放 SRT 批次) → 英法德用 Google；日韓有 DeepL Key 優先。</div>
         </div>
@@ -129,7 +200,7 @@
             </div>
         </div>
         <textarea id="sourceText" placeholder="輸入要翻譯的文字... (若要處理 SRT 字幕，請勾選下方模式)"></textarea>
-        <div style="font-size:0.7rem; color:#2c3e66; margin-top:6px;">💡 提示：若貼上 SRT 字幕內容，請務必勾選下方「SRT 字幕模式」，以啟用高效批次上下文翻譯。</div>
+        <div style="font-size:0.85rem; color:#1e3a8a; margin-top:8px; font-weight:bold;">💡 提示：若貼上 SRT 字幕內容，請務必勾選下方「SRT 字幕模式」，以啟用高效批次上下文翻譯。</div>
     </div>
 
     <div class="srt-mode-box">
@@ -313,7 +384,6 @@
                     target_lang: tgt,
                     source_lang: src,
                     domain: domain,
-                    // 將前端選擇的版面配置傳給後端
                     layout_mode: srtLayoutSelect.value 
                 })
             });
