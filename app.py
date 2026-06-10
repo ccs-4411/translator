@@ -123,7 +123,7 @@ DOMAIN_CONFIG = {
         "rules": ["使用極度嚴謹、精確的法律法規專業辭彙，結構必須與法條習慣完全對齊。"]
     },
     "it": {
-        "role": "你是一位資深全端工程師與資訊科技（IT）技術文件作家。",
+        "role": "你是一位資資深全端工程師與資訊科技（IT）技術文件作家。",
         "rules": ["請使用 IT 軟體業界與開發者常用詞彙：API=應用程式介面、Database=資料庫、Server=伺服器、Frontend=前端、Backend=後端。"]
     },
     "finance": {
@@ -151,7 +151,7 @@ def generate_dynamic_prompt(domain, src_name, tgt_name):
         f"你唯一的任務是將輸入的「{src_name}」內容精準翻譯成「{tgt_name}」。\n"
         f"【嚴格遵守規則】\n"
         f"{rule_text}"
-        f"*. 絕對不要輸出任何自我介紹、前言、解釋、說明或包含前後引號，你只需要直接輸出翻譯後的結果文字。\n"
+        f"*. 絕對不要輸出任何自我介紹、前言、解釋、說明或包含前後引號，你只需要直接輸出翻譯後的結果。\n"
     )
     
     if glossary:
@@ -197,8 +197,6 @@ def translate_deepl(text, src, tgt, api_key):
     resp.raise_for_status()
     return resp.json()["translations"][0]["text"]
 
-
-# ================== 優化：Gemini 單句翻譯 ==================
 def translate_gemini(text, src, tgt, api_key, domain="general"):
     if not api_key:
         raise ValueError("Gemini API Key 未設定")
@@ -206,7 +204,6 @@ def translate_gemini(text, src, tgt, api_key, domain="general"):
     src_name = LANG_CONFIG.get(src, {}).get("name", src)
     tgt_name = LANG_CONFIG.get(tgt, {}).get("name", tgt)
     
-    # 建立強大獨立的 System Instruction
     system_instruction = generate_dynamic_prompt(domain, src_name, tgt_name)
     
     url = f"https://generativelanguage.googleapis.com/v1/models/{DEFAULT_GEMINI_MODEL}:generateContent?key={api_key}"
@@ -238,7 +235,124 @@ def translate_gemini_batch(subtitles, src, tgt, api_key, domain="general"):
     """
     if not api_key:
         raise ValueError("Gemini API Key 未設定")
+    if not subtitles:
+        return []
         
     src_name = LANG_CONFIG.get(src, {}).get("name", src)
-    tgt_name = LANG_CONFIG.get(tgt, {}).get("
+    tgt_name = LANG_CONFIG.get(tgt, {}).get("name", tgt)
+    
+    # 建立結合 JSON 的 System Instruction 延伸規範
+    base_instruction = generate_dynamic_prompt(domain, src_name, tgt_name)
+    batch_instruction = (
+        f"{base_instruction}\n"
+        "【批次 JSON 翻譯規範】\n"
+        "1. 使用者會提供一個 JSON 陣列，包含多個物件，每個物件有 'id' 與 'text'。\n"
+        "2. 請必須保留原本的 'id'，並將 'text' 欄位內文字翻譯成目標語言。\n"
+        "3. 請嚴格返回一個合法的標準 JSON 陣列，格式與輸入完全相同，如：[{\"id\": \"1\", \"text\": \"翻譯後的文字\"}]。\n"
+        "4. 絕對不要包含任何 markdown 標記（如 ```json），直接輸出 JSON 原始字串。"
+    )
+    
+    # 準備打包輸入資料
+    input_data = [{"id": str(sub.get("id")), "text": sub.get("text", "")} for sub in subtitles]
+    input_json_str = json.dumps(input_data, ensure_ascii=False)
+    
+    url = f"[https://generativelanguage.googleapis.com/v1/models/](https://generativelanguage.googleapis.com/v1/models/){DEFAULT_GEMINI_MODEL}:generateContent?key={api_key}"
+    payload = {
+        "contents": [{"parts": [{"text": input_json_str}]}],
+        "systemInstruction": {"parts": [{"text": batch_instruction}]},
+        "generationConfig": {
+            "temperature": 0.3,
+            "responseMimeType": "application/json"  # 強制大模型回傳標準 JSON 格式
+        }
+    }
+    
+    retries = 3
+    for i in range(retries):
+        try:
+            app.logger.info(f"開始傳送 Gemini 批次翻譯，共 {len(subtitles)} 條字幕...")
+            resp = requests.post(url, json=payload, timeout=60)
+            
+            if resp.status_code == 429:
+                app.logger.warning(f"觸發 Gemini 限流 (429)，休眠 10 秒後重試...")
+                time.sleep(10)
+                continue
+                
+            if resp.status_code != 200:
+                raise Exception(f"Gemini API 錯誤 {resp.status_code}: {resp.text}")
+                
+            data = resp.json()
+            result_text = data["candidates"][0]["content"]["parts"][0]["text"].strip()
+            
+            # 解析傳回的 JSON
+            translated_list = json.loads(result_text)
+            result_map = {str(item["id"]): item["text"] for item in translated_list if "id" in item and "text" in item}
+            
+            # 重組回原字幕結構，確保不漏單
+            for sub in subtitles:
+                sub_id = str(sub.get("id"))
+                if sub_id in result_map:
+                    sub["text"] = result_map[sub_id]
+                    
+            return subtitles
+            
+        except Exception as e:
+            app.logger.error(f"Gemini 批次翻譯嘗試第 {i+1} 次失敗: {e}")
+            if i == retries - 1:
+                raise e
+            time.sleep(5)
+
+
+# ================== API 路由控制端點 ==================
+@app.route('/api/translate_srt', methods=['POST'])
+def translate_srt_endpoint():
+    try:
+        req_data = request.json or {}
+        subtitles = req_data.get("subtitles", [])  # 預期前端傳入格式：[{"id": "1", "text": "..."}]
+        src = req_data.get("src", "auto")
+        tgt = req_data.get("tgt", "zh-TW")
+        engine = req_data.get("engine", "gemini")
+        domain = req_data.get("domain", "general")
+        user_key = req_data.get("api_key", "")
+        
+        # 金鑰指派邏輯
+        gemini_key = user_key if user_key else ENV_GEMINI_KEY
+        deepl_key = user_key if user_key else ENV_DEEPL_KEY
+        
+        # 執行主要翻譯邏輯
+        if engine == "gemini" and gemini_key:
+            try:
+                # 執行效率極高的 JSON 批次翻譯
+                translated_data = translate_gemini_batch(subtitles, src, tgt, gemini_key, domain)
+                return jsonify({"status": "success", "engine": "gemini", "data": translated_data})
+            except Exception as gemini_err:
+                app.logger.error(f"Gemini 批次處理全盤失敗，全面啟動降級：{gemini_err}")
+                # 降級至傳統 Google 免費單句翻譯
+                for sub in subtitles:
+                    sub["text"] = translate_google(sub["text"], src, tgt)
+                return jsonify({"status": "success", "engine": "google (gemini 失敗降級)", "data": subtitles})
+                
+        elif engine == "deepl" and deepl_key:
+            try:
+                for sub in subtitles:
+                    sub["text"] = translate_deepl(sub["text"], src, tgt, deepl_key)
+                return jsonify({"status": "success", "engine": "deepl", "data": subtitles})
+            except Exception as deepl_err:
+                app.logger.error(f"DeepL 翻譯失敗，降級：{deepl_err}")
+                for sub in subtitles:
+                    sub["text"] = translate_google(sub["text"], src, tgt)
+                return jsonify({"status": "success", "engine": "google (deepl 失敗降級)", "data": subtitles})
+                
+        else:
+            # 沒帶 Key 或預設指定走免費 Google 翻譯
+            for sub in subtitles:
+                sub["text"] = translate_google(sub["text"], src, tgt)
+            return jsonify({"status": "success", "engine": "google", "data": subtitles})
+            
+    except Exception as e:
+        app.logger.error(traceback.format_exc())
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+if __name__ == '__main__':
+    # 啟動後端服務
+    app.run(host='0.0.0.0', port=5000, debug=True)
 
