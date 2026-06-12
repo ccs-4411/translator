@@ -191,7 +191,7 @@ def translate_deepl(text, src, tgt, api_key):
     resp.raise_for_status()
     return resp.json()["translations"][0]["text"]
 
-# 🛠️ 關鍵優化 1：單句 Gemini 翻譯 (已修正 v1beta 與 payload 結構)
+# 🛠️ 單句 Gemini 翻譯 (已將 maxOutputTokens 提高至 8192 防止截斷)
 def translate_gemini(text, src, tgt, api_key, domain="general"):
     if not api_key:
         raise ValueError("Gemini API Key 未設定")
@@ -199,7 +199,6 @@ def translate_gemini(text, src, tgt, api_key, domain="general"):
     tgt_name = LANG_CONFIG.get(tgt, {}).get("name", tgt)
     system_instruction = generate_dynamic_prompt(domain, src_name, tgt_name)
     
-    # 改用穩定支援結構化提示詞的 v1beta 節點
     url = f"https://generativelanguage.googleapis.com/v1beta/models/{DEFAULT_GEMINI_MODEL}:generateContent?key={api_key}"
     payload = {
         "contents": [
@@ -212,7 +211,7 @@ def translate_gemini(text, src, tgt, api_key, domain="general"):
         },
         "generationConfig": {
             "temperature": 0.3, 
-            "maxOutputTokens": 2000
+            "maxOutputTokens": 8192  # 🔥 關鍵修正：調高限制，長文章不卡詞
         }
     }
     
@@ -225,7 +224,7 @@ def translate_gemini(text, src, tgt, api_key, domain="general"):
     except (KeyError, IndexError):
         raise Exception("無法解析 Gemini 單句回應")
 
-# 🛠️ 關鍵優化 2：SRT 批次 Gemini 翻譯 (已修正 v1beta 與 JSON 結構)
+# 🛠️ SRT 批次 Gemini 翻譯
 def translate_gemini_batch(subtitles, src, tgt, api_key, domain="general"):
     if not api_key:
         raise ValueError("Gemini API Key 未設定")
@@ -241,13 +240,12 @@ def translate_gemini_batch(subtitles, src, tgt, api_key, domain="general"):
         "1. 使用者會提供一個 JSON 陣列，包含多個物件，每個物件有 'id' 與 'text'。\n"
         "2. 請必須保留原本的 'id'，並將 'text' 欄位內文字翻譯成目標語言。\n"
         "3. 請嚴格返回一個合法的標準 JSON 陣列，格式與輸入完全相同，如：[{\"id\": \"1\", \"text\": \"翻譯後的文字\"}]。\n"
-        "4. 絕對不要包含任何 markdown 標記（如 ```json），直接輸出 JSON 原始字串。"
+        "4. 絕對不要包含 any markdown 標記（如 ```json），直接輸出 JSON 原始字串。"
     )
     
     input_data = [{"id": str(sub.get("id")), "text": sub.get("text", "")} for sub in subtitles]
     input_json_str = json.dumps(input_data, ensure_ascii=False)
     
-    # 同步改用 v1beta 節點
     url = f"[https://generativelanguage.googleapis.com/v1beta/models/](https://generativelanguage.googleapis.com/v1beta/models/){DEFAULT_GEMINI_MODEL}:generateContent?key={api_key}"
     payload = {
         "contents": [
