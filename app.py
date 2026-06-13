@@ -9,7 +9,6 @@ from flask import Flask, request, jsonify, send_from_directory
 from flask_cors import CORS
 
 # 🔥 自動取得目前 app.py 所在的絕對路徑資料夾
-# 保證在 Render 伺服器上正確讀取同目錄下的 index.html
 base_dir = os.path.dirname(os.path.abspath(__file__))
 
 app = Flask(__name__, static_folder=base_dir, static_url_path='')
@@ -161,6 +160,29 @@ def generate_dynamic_prompt(domain, src_name, tgt_name):
         prompt += f"\n{examples}\n"
     return prompt
 
+# ========== SRT 字幕解析/組裝工具 ==========
+def parse_srt(srt_string):
+    """將 SRT 字串解析為結構化物件清單"""
+    # 標準化換行符
+    srt_string = srt_string.replace('\r\n', '\n').replace('\r', '\n')
+    blocks = re.split(r'\n\s*\n', srt_string.strip())
+    subtitles = []
+    
+    for block in blocks:
+        lines = block.split('\n')
+        if len(lines) >= 2:
+            sub_id = lines[0].strip()
+            # 比對時間軸格式
+            if '-->' in lines[1]:
+                time_sync = lines[1].strip()
+                text = " ".join(lines[2:]).strip()
+                subtitles.append({
+                    "id": sub_id,
+                    "time": time_sync,
+                    "text": text
+                })
+    return subtitles
+
 # ========== 各大引擎基礎翻譯函數 ==========
 
 def translate_google(text, src, tgt):
@@ -213,7 +235,6 @@ def translate_gemini(text, src, tgt, api_key, domain="general"):
     except (KeyError, IndexError):
         raise Exception("無法解析 Gemini 單句回應")
 
-# ================== Gemini SRT 批次脈絡翻譯 ==================
 def translate_gemini_batch(subtitles, src, tgt, api_key, domain="general"):
     if not api_key:
         raise ValueError("Gemini API Key 未設定")
@@ -267,77 +288,143 @@ def translate_gemini_batch(subtitles, src, tgt, api_key, domain="general"):
         except Exception as e:
             app.logger.error(f"Gemini 批次翻譯嘗試第 {i+1} 次失敗: {e}")
             if i == retries - 1:
-                app.logger.error("Gemini 批次翻譯失敗，啟用安全降級...")
                 raise e
             time.sleep(2)
 
-# ================== 🌟 新增：Flask 路由設定 🌟 ==================
+# ================== Flask 路由設定 ==================
 
 @app.route('/')
 def index():
     """ 導向首頁，自動尋找同目錄下的 index.html """
     return send_from_directory(app.static_folder, 'index.html')
 
-@app.route('/translate_srt', methods=['POST'])
-def translate_srt_endpoint():
-    """ 接收前端上傳的字幕與翻譯設定 """
+@app.route('/translate', methods=['POST'])
+def translate_text_endpoint():
+    """ 處理前端端點 1：普通純文字翻譯 """
     try:
         data = request.get_json() or {}
-        subtitles = data.get("subtitles", [])
-        src = data.get("src", "auto")
-        tgt = data.get("tgt", "zh-TW")
+        text = data.get("text", "").strip()
+        src = data.get("source_lang", "auto")
+        tgt = data.get("target_lang", "zh-TW")
         domain = data.get("domain", "general")
-        engine = data.get("engine", "gemini")
-        
-        # 優先使用前端傳過來的 Key，若無則拿後端環境變數
         gemini_key = data.get("gemini_key") or ENV_GEMINI_KEY
         deepl_key = data.get("deepl_key") or ENV_DEEPL_KEY
 
-        if not subtitles:
-            return jsonify({"error": "沒有收到任何字幕資料"}), 400
+        if not text:
+            return jsonify({"error": "沒有輸入任何文字"}), 400
 
-        # 1. 如果選擇 Gemini，直接使用優雅的「批次脈絡翻譯」
-        if engine == "gemini":
+        engine_used = "Google"
+        # 引擎調配策略邏輯
+        if gemini_key:
             try:
-                translated_data = translate_gemini_batch(subtitles, src, tgt, gemini_key, domain)
-                return jsonify({"translated": translated_data})
-            except Exception as gemini_err:
-                app.logger.error(f"Gemini 批次翻譯全盤失敗，啟動全安全降級機制: {gemini_err}")
-                # 萬一 JSON 損壞或全盤錯誤，降級改用逐句 Google 翻譯
-                engine = "google"
+                result = translate_gemini(text, src, tgt, gemini_key, domain)
+                return jsonify({"result": result, "engine": "Gemini"})
+            except Exception as e:
+                app.logger.warning(f"Gemini 翻譯失敗，改用備用引擎: {e}")
 
-        # 2. 逐句翻譯模式（適用於 Google, DeepL 或從 Gemini 故障降級過來的請求）
-        results = []
-        for item in subtitles:
-            sub_id = item.get("id")
-            text = item.get("text", "").strip()
-            
-            if not text:
-                results.append({"id": sub_id, "text": ""})
-                continue
-                
-            translated_text = text
-            if engine == "deepl":
-                try:
-                    translated_text = translate_deepl(text, src, tgt, deepl_key)
-                except Exception:
-                    translated_text = translate_google(text, src, tgt) # DeepL 爆了就找 Google 救
-            elif engine == "google":
-                translated_text = translate_google(text, src, tgt)
-            else:
-                # 萬一有未定義的 engine 類型
-                translated_text = translate_google(text, src, tgt)
-                
-            results.append({"id": sub_id, "text": translated_text})
-            
-        return jsonify({"translated": results})
+        if deepl_key and tgt in ["ja", "ko"]:
+            try:
+                result = translate_deepl(text, src, tgt, deepl_key)
+                return jsonify({"result": result, "engine": "DeepL"})
+            except Exception:
+                pass
+
+        result = translate_google(text, src, tgt)
+        return jsonify({"result": result, "engine": "Google"})
 
     except Exception as e:
-        app.logger.error(f"端點發生未預期錯誤: {traceback.format_exc()}")
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/translate_srt', methods=['POST'])
+def translate_srt_endpoint():
+    """ 處理前端端點 2：SRT 字幕批次翻譯 (包含解析與重新排版組裝) """
+    try:
+        data = request.get_json() or {}
+        srt_content = data.get("srt_content", "").strip()
+        src = data.get("source_lang", "auto")
+        tgt = data.get("target_lang", "zh-TW")
+        domain = data.get("domain", "general")
+        layout_mode = data.get("layout_mode", "original_first")
+        
+        gemini_key = data.get("gemini_key") or ENV_GEMINI_KEY
+        deepl_key = data.get("deepl_key") or ENV_DEEPL_KEY
+
+        if not srt_content:
+            return jsonify({"error": "沒有收到任何字幕資料"}), 400
+
+        # 1. 解析前端傳過來的純文字 SRT
+        parsed_subs = parse_srt(srt_content)
+        if not parsed_subs:
+            return jsonify({"error": "SRT 格式解析失敗，請確認內容是否符合標準 SRT 規範"}), 400
+
+        engine_used = "Google 逐句降級"
+        translated_map = {}
+
+        # 2. 核心大策略：看是否能用高連貫性的 Gemini 進行整批 JSON 脈絡翻譯
+        if gemini_key:
+            try:
+                batch_res = translate_gemini_batch(parsed_subs, src, tgt, gemini_key, domain)
+                for item in batch_res:
+                    translated_map[str(item.get("id"))] = item.get("text", "")
+                engine_used = "Gemini 智慧批次"
+            except Exception as gemini_err:
+                app.logger.error(f"Gemini 批次翻譯失敗，啟動全安全逐句降級機制: {gemini_err}")
+
+        # 3. 如果沒 Gemini Key 或 Gemini 失敗，利用 Google/DeepL 作逐句安全備援
+        if not translated_map:
+            for item in parsed_subs:
+                sub_id = str(item["id"])
+                text = item["text"]
+                if not text:
+                    translated_map[sub_id] = ""
+                    continue
+                
+                # 有 DeepL 且目標語系為日韓時優先使用
+                if deepl_key and tgt in ["ja", "ko"]:
+                    try:
+                        translated_map[sub_id] = translate_deepl(text, src, tgt, deepl_key)
+                        engine_used = "DeepL 逐句安全備援"
+                        continue
+                    except Exception:
+                        pass
+                
+                # 最終底線：Google 翻譯
+                translated_map[sub_id] = translate_google(text, src, tgt)
+
+        # 4. 依據前端選擇的 layout_mode 重新組裝成標準 SRT 字串
+        output_lines = []
+        for item in parsed_subs:
+            sub_id = str(item["id"])
+            time_sync = item["time"]
+            orig_text = item["text"]
+            trans_text = translated_map.get(sub_id, "")
+
+            output_lines.append(sub_id)
+            output_lines.append(time_sync)
+            
+            if layout_mode == "original_first":
+                output_lines.append(f"{orig_text}\n{trans_text}")
+            elif layout_mode == "translated_first":
+                output_lines.append(f"{trans_text}\n{orig_text}")
+            elif layout_mode == "translated_only":
+                output_lines.append(trans_text)
+            else:
+                output_lines.append(f"{orig_text}\n{trans_text}")
+                
+            output_lines.append("") # 區塊間的空行
+
+        final_srt_output = "\n".join(output_lines)
+        return jsonify({
+            "srt_output": final_srt_output,
+            "count": len(parsed_subs),
+            "engine": engine_used
+        })
+
+    except Exception as e:
+        app.logger.error(f"SRT 端點發生未預期錯誤: {traceback.format_exc()}")
         return jsonify({"error": str(e)}), 500
 
 if __name__ == '__main__':
-    # 本地測試用，Render 上會自動被 gunicorn 呼叫 app:app
     app.run(host='0.0.0.0', port=int(os.environ.get('PORT', 5000)))
 
 
