@@ -8,8 +8,8 @@ import json
 from flask import Flask, request, jsonify, send_from_directory
 from flask_cors import CORS
 
-# 🔥 關鍵核心修正：自動取得目前 app.py 所在的絕對路徑資料夾
-# 這能保證 100% 在 Render 伺服器上正確讀取同目錄下的 index.html
+# 🔥 自動取得目前 app.py 所在的絕對路徑資料夾
+# 保證在 Render 伺服器上正確讀取同目錄下的 index.html
 base_dir = os.path.dirname(os.path.abspath(__file__))
 
 app = Flask(__name__, static_folder=base_dir, static_url_path='')
@@ -198,10 +198,10 @@ def translate_gemini(text, src, tgt, api_key, domain="general"):
     tgt_name = LANG_CONFIG.get(tgt, {}).get("name", tgt)
     system_instruction = generate_dynamic_prompt(domain, src_name, tgt_name)
     
-    url = f"https://generativelanguage.googleapis.com/v1/models/{DEFAULT_GEMINI_MODEL}:generateContent?key={api_key}"
+    # 🌟 關鍵修正：將端點版本改為 /v1beta/ 以正常啟用 system_instruction 欄位
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/{DEFAULT_GEMINI_MODEL}:generateContent?key={api_key}"
     payload = {
         "contents": [{"parts": [{"text": text}]}],
-        # 🛠️ 修正點：將 systemInstruction 改為 system_instruction
         "system_instruction": {"parts": [{"text": system_instruction}]},
         "generationConfig": {"temperature": 0.3, "maxOutputTokens": 2000}
     }
@@ -236,10 +236,10 @@ def translate_gemini_batch(subtitles, src, tgt, api_key, domain="general"):
     input_data = [{"id": str(sub.get("id")), "text": sub.get("text", "")} for sub in subtitles]
     input_json_str = json.dumps(input_data, ensure_ascii=False)
     
-    url = f"[https://generativelanguage.googleapis.com/v1/models/](https://generativelanguage.googleapis.com/v1/models/){DEFAULT_GEMINI_MODEL}:generateContent?key={api_key}"
+    # 🌟 關鍵修正：將端點版本改為 /v1beta/ 以正常支援 system_instruction 與 JSON 格式化設定
+    url = f"[https://generativelanguage.googleapis.com/v1beta/models/](https://generativelanguage.googleapis.com/v1beta/models/){DEFAULT_GEMINI_MODEL}:generateContent?key={api_key}"
     payload = {
         "contents": [{"parts": [{"text": input_json_str}]}],
-        # 🛠️ 修正點：將 systemInstruction 改為 system_instruction
         "system_instruction": {"parts": [{"text": batch_instruction}]},
         "generationConfig": {"temperature": 0.3, "responseMimeType": "application/json"}
     }
@@ -303,7 +303,7 @@ def rebuild_srt(subtitles, layout_mode):
 
 # ================== API 路由控制端點 ==================
 
-# 🌟 關鍵路由修正：訪問網址根目錄時，從絕對路徑直接抓取 index.html 檔案給瀏覽器
+# 訪問網址根目錄時，從絕對路徑直接抓取 index.html 檔案給瀏覽器
 @app.route('/')
 def index():
     return send_from_directory(app.static_folder, 'index.html')
