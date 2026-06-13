@@ -167,7 +167,6 @@ def translate_google(text, src, tgt):
     try:
         src_code = LANG_CONFIG.get(src, {}).get("google", "auto")
         tgt_code = LANG_CONFIG.get(tgt, {}).get("google", "en")
-        # 修正：移除不小心混入的 Markdown 連結語法
         url = f"https://translate.googleapis.com/translate_a/single?client=gtx&sl={src_code}&tl={tgt_code}&dt=t&q={requests.utils.quote(text)}"
         resp = requests.get(url, timeout=20)
         if resp.status_code == 200:
@@ -188,7 +187,6 @@ def translate_deepl(text, src, tgt, api_key):
     if src_code and src_code != "auto":
         params["source_lang"] = src_code
     headers = {"Authorization": f"DeepL-Auth-Key {api_key}"}
-    # 修正：移除不小心混入的 Markdown 連結語法
     resp = requests.post("https://api-free.deepl.com/v2/translate", data=params, headers=headers, timeout=20)
     resp.raise_for_status()
     return resp.json()["translations"][0]["text"]
@@ -200,7 +198,6 @@ def translate_gemini(text, src, tgt, api_key, domain="general"):
     tgt_name = LANG_CONFIG.get(tgt, {}).get("name", tgt)
     system_instruction = generate_dynamic_prompt(domain, src_name, tgt_name)
     
-    # 修正：移除不小心混入的 Markdown 連結語法
     url = f"https://generativelanguage.googleapis.com/v1beta/models/{DEFAULT_GEMINI_MODEL}:generateContent?key={api_key}"
     payload = {
         "contents": [{"parts": [{"text": text}]}],
@@ -237,7 +234,6 @@ def translate_gemini_batch(subtitles, src, tgt, api_key, domain="general"):
     input_data = [{"id": str(sub.get("id")), "text": sub.get("text", "")} for sub in subtitles]
     input_json_str = json.dumps(input_data, ensure_ascii=False)
     
-    # 修正：移除不小心混入的 Markdown 連結語法
     url = f"https://generativelanguage.googleapis.com/v1beta/models/{DEFAULT_GEMINI_MODEL}:generateContent?key={api_key}"
     payload = {
         "contents": [{"parts": [{"text": input_json_str}]}],
@@ -272,8 +268,76 @@ def translate_gemini_batch(subtitles, src, tgt, api_key, domain="general"):
             app.logger.error(f"Gemini 批次翻譯嘗試第 {i+1} 次失敗: {e}")
             if i == retries - 1:
                 app.logger.error("Gemini 批次翻譯失敗，啟用安全降級...")
-                # 這裡原本程式碼被截斷了，幫你做基本的降級返回或拋出異常
                 raise e
             time.sleep(2)
+
+# ================== 🌟 新增：Flask 路由設定 🌟 ==================
+
+@app.route('/')
+def index():
+    """ 導向首頁，自動尋找同目錄下的 index.html """
+    return send_from_directory(app.static_folder, 'index.html')
+
+@app.route('/translate_srt', methods=['POST'])
+def translate_srt_endpoint():
+    """ 接收前端上傳的字幕與翻譯設定 """
+    try:
+        data = request.get_json() or {}
+        subtitles = data.get("subtitles", [])
+        src = data.get("src", "auto")
+        tgt = data.get("tgt", "zh-TW")
+        domain = data.get("domain", "general")
+        engine = data.get("engine", "gemini")
+        
+        # 優先使用前端傳過來的 Key，若無則拿後端環境變數
+        gemini_key = data.get("gemini_key") or ENV_GEMINI_KEY
+        deepl_key = data.get("deepl_key") or ENV_DEEPL_KEY
+
+        if not subtitles:
+            return jsonify({"error": "沒有收到任何字幕資料"}), 400
+
+        # 1. 如果選擇 Gemini，直接使用優雅的「批次脈絡翻譯」
+        if engine == "gemini":
+            try:
+                translated_data = translate_gemini_batch(subtitles, src, tgt, gemini_key, domain)
+                return jsonify({"translated": translated_data})
+            except Exception as gemini_err:
+                app.logger.error(f"Gemini 批次翻譯全盤失敗，啟動全安全降級機制: {gemini_err}")
+                # 萬一 JSON 損壞或全盤錯誤，降級改用逐句 Google 翻譯
+                engine = "google"
+
+        # 2. 逐句翻譯模式（適用於 Google, DeepL 或從 Gemini 故障降級過來的請求）
+        results = []
+        for item in subtitles:
+            sub_id = item.get("id")
+            text = item.get("text", "").strip()
+            
+            if not text:
+                results.append({"id": sub_id, "text": ""})
+                continue
+                
+            translated_text = text
+            if engine == "deepl":
+                try:
+                    translated_text = translate_deepl(text, src, tgt, deepl_key)
+                except Exception:
+                    translated_text = translate_google(text, src, tgt) # DeepL 爆了就找 Google 救
+            elif engine == "google":
+                translated_text = translate_google(text, src, tgt)
+            else:
+                # 萬一有未定義的 engine 類型
+                translated_text = translate_google(text, src, tgt)
+                
+            results.append({"id": sub_id, "text": translated_text})
+            
+        return jsonify({"translated": results})
+
+    except Exception as e:
+        app.logger.error(f"端點發生未預期錯誤: {traceback.format_exc()}")
+        return jsonify({"error": str(e)}), 500
+
+if __name__ == '__main__':
+    # 本地測試用，Render 上會自動被 gunicorn 呼叫 app:app
+    app.run(host='0.0.0.0', port=int(os.environ.get('PORT', 5000)))
 
 
