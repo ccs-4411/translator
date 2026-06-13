@@ -167,7 +167,7 @@ def translate_google(text, src, tgt):
     try:
         src_code = LANG_CONFIG.get(src, {}).get("google", "auto")
         tgt_code = LANG_CONFIG.get(tgt, {}).get("google", "en")
-        url = f"https://translate.googleapis.com/translate_a/single?client=gtx&sl={src_code}&tl={tgt_code}&dt=t&q={requests.utils.quote(text)}"
+        url = f"[https://translate.googleapis.com/translate_a/single?client=gtx&sl=](https://translate.googleapis.com/translate_a/single?client=gtx&sl=){src_code}&tl={tgt_code}&dt=t&q={requests.utils.quote(text)}"
         resp = requests.get(url, timeout=20)
         if resp.status_code == 200:
             data = resp.json()
@@ -187,7 +187,7 @@ def translate_deepl(text, src, tgt, api_key):
     if src_code and src_code != "auto":
         params["source_lang"] = src_code
     headers = {"Authorization": f"DeepL-Auth-Key {api_key}"}
-    resp = requests.post("https://api-free.deepl.com/v2/translate", data=params, headers=headers, timeout=20)
+    resp = requests.post("[https://api-free.deepl.com/v2/translate](https://api-free.deepl.com/v2/translate)", data=params, headers=headers, timeout=20)
     resp.raise_for_status()
     return resp.json()["translations"][0]["text"]
 
@@ -198,8 +198,8 @@ def translate_gemini(text, src, tgt, api_key, domain="general"):
     tgt_name = LANG_CONFIG.get(tgt, {}).get("name", tgt)
     system_instruction = generate_dynamic_prompt(domain, src_name, tgt_name)
     
-    # 🌟 關鍵修正：將端點版本改為 /v1beta/ 以正常啟用 system_instruction 欄位
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/{DEFAULT_GEMINI_MODEL}:generateContent?key={api_key}"
+    # 使用符合規範之 v1beta 節點與 system_instruction 欄位
+    url = f"[https://generativelanguage.googleapis.com/v1beta/models/](https://generativelanguage.googleapis.com/v1beta/models/){DEFAULT_GEMINI_MODEL}:generateContent?key={api_key}"
     payload = {
         "contents": [{"parts": [{"text": text}]}],
         "system_instruction": {"parts": [{"text": system_instruction}]},
@@ -229,14 +229,13 @@ def translate_gemini_batch(subtitles, src, tgt, api_key, domain="general"):
         "【批次 JSON 翻譯規範】\n"
         "1. 使用者會提供一個 JSON 陣列，包含多個物件，每個物件有 'id' 與 'text'。\n"
         "2. 請必須保留原本的 'id'，並將 'text' 欄位內文字翻譯成目標語言。\n"
-        "3. 請嚴格返回一個合法的標準 JSON 陣列，格式與輸入完全相同，如：[{\"id\": \"1\", \"text\": \"翻譯後的文字\"}]。\n"
-        "4. 絕對不要包含任何 markdown 標記（如 ```json），直接輸出 JSON 原始字串。"
+        "3. 請嚴格返回一個合法的標準 JSON 陣列，格式與輸入完全相同，如：[{\"id\": \"1\", \"text\": \"翻譯後的文字\"}]。"
     )
     
     input_data = [{"id": str(sub.get("id")), "text": sub.get("text", "")} for sub in subtitles]
     input_json_str = json.dumps(input_data, ensure_ascii=False)
     
-    # 🌟 關鍵修正：將端點版本改為 /v1beta/ 以正常支援 system_instruction 與 JSON 格式化設定
+    # 採用 v1beta 節點
     url = f"[https://generativelanguage.googleapis.com/v1beta/models/](https://generativelanguage.googleapis.com/v1beta/models/){DEFAULT_GEMINI_MODEL}:generateContent?key={api_key}"
     payload = {
         "contents": [{"parts": [{"text": input_json_str}]}],
@@ -249,136 +248,18 @@ def translate_gemini_batch(subtitles, src, tgt, api_key, domain="general"):
         try:
             resp = requests.post(url, json=payload, timeout=60)
             if resp.status_code == 429:
+                app.logger.warning("偵測到 Rate Limit (429)，等待 10 秒後重試...")
                 time.sleep(10)
                 continue
             if resp.status_code != 200:
                 raise Exception(f"Gemini API 錯誤 {resp.status_code}: {resp.text}")
+                
             data = resp.json()
             result_text = data["candidates"][0]["content"]["parts"][0]["text"].strip()
             
-            translated_list = json.loads(result_text)
-            result_map = {str(item["id"]): item["text"] for item in translated_list if "id" in item and "text" in item}
-            for sub in subtitles:
-                sub_id = str(sub.get("id"))
-                if sub_id in result_map:
-                    sub["text"] = result_map[sub_id]
-            return subtitles
-        except Exception as e:
-            app.logger.error(f"Gemini 批次翻譯嘗試第 {i+1} 次失敗: {e}")
-            if i == retries - 1:
-                raise e
-            time.sleep(5)
-
-# ================== SRT 格式解析與重組工具 ==================
-def parse_srt(srt_text):
-    blocks = re.split(r'\n\s*\n', srt_text.strip())
-    subtitles = []
-    for block in blocks:
-        lines = block.strip().split('\n')
-        if len(lines) >= 3:
-            sub_id = lines[0].strip()
-            time_line = lines[1].strip()
-            text_content = "\n".join(lines[2:])
-            subtitles.append({
-                "id": sub_id,
-                "time": time_line,
-                "text": text_content,
-                "original_text": text_content
-            })
-    return subtitles
-
-def rebuild_srt(subtitles, layout_mode):
-    output = []
-    for sub in subtitles:
-        orig = sub.get("original_text", "")
-        trans = sub.get("text", "")
-        if layout_mode == "original_first":
-            merged_text = f"{orig}\n{trans}" if orig != trans else trans
-        elif layout_mode == "translated_first":
-            merged_text = f"{trans}\n{orig}" if orig != trans else trans
-        else:
-            merged_text = trans
-        output.append(f"{sub['id']}\n{sub['time']}\n{merged_text}")
-    return "\n\n".join(output)
-
-# ================== API 路由控制端點 ==================
-
-# 訪問網址根目錄時，從絕對路徑直接抓取 index.html 檔案給瀏覽器
-@app.route('/')
-def index():
-    return send_from_directory(app.static_folder, 'index.html')
-
-@app.route('/translate', methods=['POST'])
-def translate_endpoint():
-    try:
-        req_data = request.json or {}
-        text = req_data.get("text", "")
-        src = req_data.get("source_lang", "auto")
-        tgt = req_data.get("target_lang", "zh-TW")
-        domain = req_data.get("domain", "general")
-        user_gemini_key = req_data.get("gemini_key", "")
-        user_deepl_key = req_data.get("deepl_key", "")
-        
-        gemini_key = user_gemini_key if user_gemini_key else ENV_GEMINI_KEY
-        deepl_key = user_deepl_key if user_deepl_key else ENV_DEEPL_KEY
-        
-        if gemini_key:
-            res = translate_gemini(text, src, tgt, gemini_key, domain)
-            return jsonify({"status": "success", "engine": "gemini", "result": res})
-        elif deepl_key and tgt in ["ja", "ko"]:
-            res = translate_deepl(text, src, tgt, deepl_key)
-            return jsonify({"status": "success", "engine": "deepl", "result": res})
-        else:
-            res = translate_google(text, src, tgt)
-            return jsonify({"status": "success", "engine": "google", "result": res})
-    except Exception as e:
-        app.logger.error(traceback.format_exc())
-        return jsonify({"error": str(e)}), 500
-
-@app.route('/translate_srt', methods=['POST'])
-def translate_srt_endpoint():
-    try:
-        req_data = request.json or {}
-        srt_content = req_data.get("srt_content", "")
-        src = req_data.get("source_lang", "auto")
-        tgt = req_data.get("target_lang", "zh-TW")
-        domain = req_data.get("domain", "general")
-        layout_mode = req_data.get("layout_mode", "original_first")
-        user_gemini_key = req_data.get("gemini_key", "")
-        
-        gemini_key = user_gemini_key if user_gemini_key else ENV_GEMINI_KEY
-        
-        subtitles = parse_srt(srt_content)
-        if not subtitles:
-            return jsonify({"error": "未能成功解析任何 SRT 字幕，請確認格式"}), 400
-            
-        engine_used = "google"
-        if gemini_key:
-            try:
-                subtitles = translate_gemini_batch(subtitles, src, tgt, gemini_key, domain)
-                engine_used = "gemini"
-            except Exception as gemini_err:
-                app.logger.error(f"Gemini 批次翻譯失敗，啟用安全降級：{gemini_err}")
-                for sub in subtitles:
-                    sub["text"] = translate_google(sub["text"], src, tgt)
-                engine_used = "google (gemini 失敗降級)"
-        else:
-            for sub in subtitles:
-                sub["text"] = translate_google(sub["text"], src, tgt)
-                
-        final_srt = rebuild_srt(subtitles, layout_mode)
-        return jsonify({
-            "status": "success",
-            "engine": engine_used,
-            "count": len(subtitles),
-            "srt_output": final_srt
-        })
-    except Exception as e:
-        app.logger.error(traceback.format_exc())
-        return jsonify({"error": str(e)}), 500
-
-if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=5000, debug=True)
-
+            # 🌟【超關鍵深度容錯】：剝離模型可能固執加上的 Markdown (如 ```json ... ```) 標籤
+            if "```" in result_text:
+                app.logger.info("偵測到 Gemini 回傳帶有 Markdown 包裝，啟動正則自動剝離修復...")
+                result_text = re.sub(r'^
 
 
