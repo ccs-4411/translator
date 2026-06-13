@@ -107,7 +107,7 @@ DOMAIN_CONFIG = {
         "rules": ["請使用精確的機械專業工程術語：CNC=CNC加工、Bearing=軸承、Torque=扭矩、Tolerance=公差、Fixture=治具、Gear=齒輪、Shaft=軸。"]
     },
     "semiconductor": {
-        "role": "你是一位在晶圓代工大廠工作多年的資死製程工程師與半導體產業編譯。",
+        "role": "你是一位在晶圓代工大廠工作多年的資深製程工程師與半導體產業編譯。",
         "rules": ["保持業界高度專業口吻。", "當業界習慣直接使用英文簡稱或專有名詞時，請直接保留（例如 Fab、Wafer、Tape-out、Die），不需強行死譯。"],
         "glossary": """
 | 專有名詞 | 翻譯規範 |
@@ -201,7 +201,8 @@ def translate_gemini(text, src, tgt, api_key, domain="general"):
     url = f"https://generativelanguage.googleapis.com/v1/models/{DEFAULT_GEMINI_MODEL}:generateContent?key={api_key}"
     payload = {
         "contents": [{"parts": [{"text": text}]}],
-        "systemInstruction": {"parts": [{"text": system_instruction}]},
+        # 🛠️ 修正點：將 systemInstruction 改為 system_instruction
+        "system_instruction": {"parts": [{"text": system_instruction}]},
         "generationConfig": {"temperature": 0.3, "maxOutputTokens": 2000}
     }
     resp = requests.post(url, json=payload, timeout=25)
@@ -238,7 +239,8 @@ def translate_gemini_batch(subtitles, src, tgt, api_key, domain="general"):
     url = f"[https://generativelanguage.googleapis.com/v1/models/](https://generativelanguage.googleapis.com/v1/models/){DEFAULT_GEMINI_MODEL}:generateContent?key={api_key}"
     payload = {
         "contents": [{"parts": [{"text": input_json_str}]}],
-        "systemInstruction": {"parts": [{"text": batch_instruction}]},
+        # 🛠️ 修正點：將 systemInstruction 改為 system_instruction
+        "system_instruction": {"parts": [{"text": batch_instruction}]},
         "generationConfig": {"temperature": 0.3, "responseMimeType": "application/json"}
     }
     
