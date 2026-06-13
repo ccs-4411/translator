@@ -8,7 +8,7 @@ import json
 from flask import Flask, request, jsonify, send_from_directory
 from flask_cors import CORS
 
-# 🔥 自動取得目前 app.py 所在的絕對路徑資料夾
+# 🔥 關鍵核心修正：自動取得目前 app.py 所在的絕對路徑資料夾
 # 這能保證 100% 在 Render 伺服器上正確讀取同目錄下的 index.html
 base_dir = os.path.dirname(os.path.abspath(__file__))
 
@@ -107,7 +107,7 @@ DOMAIN_CONFIG = {
         "rules": ["請使用精確的機械專業工程術語：CNC=CNC加工、Bearing=軸承、Torque=扭矩、Tolerance=公差、Fixture=治具、Gear=齒輪、Shaft=軸。"]
     },
     "semiconductor": {
-        "role": "你是一位在晶圓代工大廠工作多年的資深製程工程師與半導體產業編譯。",
+        "role": "你是一位在晶圓代工大廠工作多年的資死製程工程師與半導體產業編譯。",
         "rules": ["保持業界高度專業口吻。", "當業界習慣直接使用英文簡稱或專有名詞時，請直接保留（例如 Fab、Wafer、Tape-out、Die），不需強行死譯。"],
         "glossary": """
 | 專有名詞 | 翻譯規範 |
@@ -191,7 +191,6 @@ def translate_deepl(text, src, tgt, api_key):
     resp.raise_for_status()
     return resp.json()["translations"][0]["text"]
 
-# 🛠️ 單句 Gemini 翻譯 (已將 maxOutputTokens 提高至 8192 防止截斷)
 def translate_gemini(text, src, tgt, api_key, domain="general"):
     if not api_key:
         raise ValueError("Gemini API Key 未設定")
@@ -199,22 +198,12 @@ def translate_gemini(text, src, tgt, api_key, domain="general"):
     tgt_name = LANG_CONFIG.get(tgt, {}).get("name", tgt)
     system_instruction = generate_dynamic_prompt(domain, src_name, tgt_name)
     
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/{DEFAULT_GEMINI_MODEL}:generateContent?key={api_key}"
+    url = f"https://generativelanguage.googleapis.com/v1/models/{DEFAULT_GEMINI_MODEL}:generateContent?key={api_key}"
     payload = {
-        "contents": [
-            {
-                "parts": [{"text": text}]
-            }
-        ],
-        "systemInstruction": {
-            "parts": [{"text": system_instruction}]
-        },
-        "generationConfig": {
-            "temperature": 0.3, 
-            "maxOutputTokens": 8192  # 🔥 關鍵修正：調高限制，長文章不卡詞
-        }
+        "contents": [{"parts": [{"text": text}]}],
+        "systemInstruction": {"parts": [{"text": system_instruction}]},
+        "generationConfig": {"temperature": 0.3, "maxOutputTokens": 2000}
     }
-    
     resp = requests.post(url, json=payload, timeout=25)
     if resp.status_code != 200:
         raise Exception(f"Gemini API 錯誤 {resp.status_code}: {resp.text}")
@@ -224,7 +213,7 @@ def translate_gemini(text, src, tgt, api_key, domain="general"):
     except (KeyError, IndexError):
         raise Exception("無法解析 Gemini 單句回應")
 
-# 🛠️ SRT 批次 Gemini 翻譯
+# ================== Gemini SRT 批次脈絡翻譯 ==================
 def translate_gemini_batch(subtitles, src, tgt, api_key, domain="general"):
     if not api_key:
         raise ValueError("Gemini API Key 未設定")
@@ -240,26 +229,17 @@ def translate_gemini_batch(subtitles, src, tgt, api_key, domain="general"):
         "1. 使用者會提供一個 JSON 陣列，包含多個物件，每個物件有 'id' 與 'text'。\n"
         "2. 請必須保留原本的 'id'，並將 'text' 欄位內文字翻譯成目標語言。\n"
         "3. 請嚴格返回一個合法的標準 JSON 陣列，格式與輸入完全相同，如：[{\"id\": \"1\", \"text\": \"翻譯後的文字\"}]。\n"
-        "4. 絕對不要包含 any markdown 標記（如 ```json），直接輸出 JSON 原始字串。"
+        "4. 絕對不要包含任何 markdown 標記（如 ```json），直接輸出 JSON 原始字串。"
     )
     
     input_data = [{"id": str(sub.get("id")), "text": sub.get("text", "")} for sub in subtitles]
     input_json_str = json.dumps(input_data, ensure_ascii=False)
     
-    url = f"[https://generativelanguage.googleapis.com/v1beta/models/](https://generativelanguage.googleapis.com/v1beta/models/){DEFAULT_GEMINI_MODEL}:generateContent?key={api_key}"
+    url = f"[https://generativelanguage.googleapis.com/v1/models/](https://generativelanguage.googleapis.com/v1/models/){DEFAULT_GEMINI_MODEL}:generateContent?key={api_key}"
     payload = {
-        "contents": [
-            {
-                "parts": [{"text": input_json_str}]
-            }
-        ],
-        "systemInstruction": {
-            "parts": [{"text": batch_instruction}]
-        },
-        "generationConfig": {
-            "temperature": 0.3, 
-            "responseMimeType": "application/json"
-        }
+        "contents": [{"parts": [{"text": input_json_str}]}],
+        "systemInstruction": {"parts": [{"text": batch_instruction}]},
+        "generationConfig": {"temperature": 0.3, "responseMimeType": "application/json"}
     }
     
     retries = 3
@@ -321,6 +301,7 @@ def rebuild_srt(subtitles, layout_mode):
 
 # ================== API 路由控制端點 ==================
 
+# 🌟 關鍵路由修正：訪問網址根目錄時，從絕對路徑直接抓取 index.html 檔案給瀏覽器
 @app.route('/')
 def index():
     return send_from_directory(app.static_folder, 'index.html')
