@@ -167,7 +167,8 @@ def translate_google(text, src, tgt):
     try:
         src_code = LANG_CONFIG.get(src, {}).get("google", "auto")
         tgt_code = LANG_CONFIG.get(tgt, {}).get("google", "en")
-        url = f"[https://translate.googleapis.com/translate_a/single?client=gtx&sl=](https://translate.googleapis.com/translate_a/single?client=gtx&sl=){src_code}&tl={tgt_code}&dt=t&q={requests.utils.quote(text)}"
+        # 修正：移除不小心混入的 Markdown 連結語法
+        url = f"https://translate.googleapis.com/translate_a/single?client=gtx&sl={src_code}&tl={tgt_code}&dt=t&q={requests.utils.quote(text)}"
         resp = requests.get(url, timeout=20)
         if resp.status_code == 200:
             data = resp.json()
@@ -187,7 +188,8 @@ def translate_deepl(text, src, tgt, api_key):
     if src_code and src_code != "auto":
         params["source_lang"] = src_code
     headers = {"Authorization": f"DeepL-Auth-Key {api_key}"}
-    resp = requests.post("[https://api-free.deepl.com/v2/translate](https://api-free.deepl.com/v2/translate)", data=params, headers=headers, timeout=20)
+    # 修正：移除不小心混入的 Markdown 連結語法
+    resp = requests.post("https://api-free.deepl.com/v2/translate", data=params, headers=headers, timeout=20)
     resp.raise_for_status()
     return resp.json()["translations"][0]["text"]
 
@@ -198,8 +200,8 @@ def translate_gemini(text, src, tgt, api_key, domain="general"):
     tgt_name = LANG_CONFIG.get(tgt, {}).get("name", tgt)
     system_instruction = generate_dynamic_prompt(domain, src_name, tgt_name)
     
-    # 使用符合規範之 v1beta 節點與 system_instruction 欄位
-    url = f"[https://generativelanguage.googleapis.com/v1beta/models/](https://generativelanguage.googleapis.com/v1beta/models/){DEFAULT_GEMINI_MODEL}:generateContent?key={api_key}"
+    # 修正：移除不小心混入的 Markdown 連結語法
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/{DEFAULT_GEMINI_MODEL}:generateContent?key={api_key}"
     payload = {
         "contents": [{"parts": [{"text": text}]}],
         "system_instruction": {"parts": [{"text": system_instruction}]},
@@ -235,8 +237,8 @@ def translate_gemini_batch(subtitles, src, tgt, api_key, domain="general"):
     input_data = [{"id": str(sub.get("id")), "text": sub.get("text", "")} for sub in subtitles]
     input_json_str = json.dumps(input_data, ensure_ascii=False)
     
-    # 採用 v1beta 節點
-    url = f"[https://generativelanguage.googleapis.com/v1beta/models/](https://generativelanguage.googleapis.com/v1beta/models/){DEFAULT_GEMINI_MODEL}:generateContent?key={api_key}"
+    # 修正：移除不小心混入的 Markdown 連結語法
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/{DEFAULT_GEMINI_MODEL}:generateContent?key={api_key}"
     payload = {
         "contents": [{"parts": [{"text": input_json_str}]}],
         "system_instruction": {"parts": [{"text": batch_instruction}]},
@@ -257,9 +259,21 @@ def translate_gemini_batch(subtitles, src, tgt, api_key, domain="general"):
             data = resp.json()
             result_text = data["candidates"][0]["content"]["parts"][0]["text"].strip()
             
-            # 🌟【超關鍵深度容錯】：剝離模型可能固執加上的 Markdown (如 ```json ... ```) 標籤
             if "```" in result_text:
                 app.logger.info("偵測到 Gemini 回傳帶有 Markdown 包裝，啟動正則自動剝離修復...")
-                result_text = re.sub(r'^
+                result_text = re.sub(r'^```json\s*', '', result_text, flags=re.IGNORECASE)
+                result_text = re.sub(r'^```\s*', '', result_text)
+                result_text = re.sub(r'\s*```$', '', result_text)
+            
+            translated_list = json.loads(result_text)
+            return translated_list
+            
+        except Exception as e:
+            app.logger.error(f"Gemini 批次翻譯嘗試第 {i+1} 次失敗: {e}")
+            if i == retries - 1:
+                app.logger.error("Gemini 批次翻譯失敗，啟用安全降級...")
+                # 這裡原本程式碼被截斷了，幫你做基本的降級返回或拋出異常
+                raise e
+            time.sleep(2)
 
 
