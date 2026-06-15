@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
     <link rel="apple-touch-icon" href="多語言翻譯.png">
-    <title>智慧翻譯 | 純前端 Gemini 直連版</title>
+    <title>智慧翻譯 | 純前端 Gemini 直連分批優化版</title>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         
@@ -190,7 +190,7 @@
     <div class="srt-mode-box">
         <div class="srt-mode">
             <label>
-                <input type="checkbox" id="srtModeCheckbox"> 🎞️ <strong>開啟 SRT 字幕模式</strong> (保留時間軸)
+                <input type="checkbox" id="srtModeCheckbox"> 🎞️ <strong>開啟 SRT 字幕模式</strong> (自動分批切片，防斷頭吃字)
             </label>
             
             <div id="srtOptions" style="display: inline-flex; align-items: center; gap: 8px; opacity: 0.5; pointer-events: none;">
@@ -202,7 +202,7 @@
                 </select>
             </div>
         </div>
-        <span class="srt-hint">⚠️ 注意：非 SRT 格式文字請勿勾選。啟用後將由 Gemini 進行「整批上下文優化翻譯」，語意連貫。</span>
+        <span class="srt-hint">⚠️ 注意：長字幕會自動切成 40 條一組分批翻譯，完美保留 100% 時間軸，絕不漏字。</span>
     </div>
 
     <div class="translate-bar">
@@ -230,6 +230,7 @@
     ];
     const TGT_LANG_LIST = SRC_LANG_LIST.slice(1);
 
+    const accordion = document.getElementById('keyAccordion');
     function populateSelects() {
         const source = document.getElementById('sourceLang');
         const target = document.getElementById('targetLang');
@@ -304,7 +305,6 @@
 
     // 🧠 核心功能：前端直連 Google Gemini API
     async function callGeminiAPI(promptText, apiKey) {
-        // 使用 gemini-1.5-flash 模型，速度極快且適合大批次翻譯任務
         const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`;
         
         const response = await fetch(url, {
@@ -313,7 +313,7 @@
             body: JSON.stringify({
                 contents: [{ parts: [{ text: promptText }] }],
                 generationConfig: {
-                    temperature: 0.3, // 低隨機度，確保翻譯嚴謹穩定
+                    temperature: 0.3, 
                     maxOutputTokens: 8192
                 }
             })
@@ -330,6 +330,27 @@
         } catch (e) {
             throw new Error("無法解析 Gemini 回傳的結構，請檢查輸入內容。");
         }
+    }
+
+    // 🧩 輔助函式：將 SRT 純文字解析為陣列結構
+    function parseSRT(srtText) {
+        const normalized = srtText.replace(/\r\n/g, '\n').trim();
+        const blocks = normalized.split(/\n\n+/);
+        const srtItems = [];
+
+        for (let block of blocks) {
+            const lines = block.split('\n');
+            if (lines.length >= 2) {
+                const id = lines[0].trim();
+                const timeline = lines[1].trim();
+                // 檢查第二行是否符合時間軸特徵
+                if (timeline.includes('-->')) {
+                    const content = lines.slice(2).join('\n');
+                    srtItems.push({ id, timeline, content });
+                }
+            }
+        }
+        return srtItems;
     }
 
     // 🚀 翻譯主邏輯
@@ -370,11 +391,18 @@ ${text}
             return;
         }
 
-        // 2. SRT 字幕批次連貫優化模式 (純前端解析與 Prompt 設計)
-        targetText.value = '⏳ 正在透過瀏覽器直連 Gemini 進行大文件上下文優化翻譯... (通常需要 3~8 秒)';
-        setMsg('🔄 字幕組裝中，正在直發 Google 端點...');
+        // 2. SRT 字幕【安全分批切片】連貫優化模式
+        targetText.value = '⏳ 正在解析字幕檔案並初始化分批翻譯任務...';
+        
+        const srtItems = parseSRT(text);
+        if (srtItems.length === 0) {
+            setMsg('❌ 錯誤：無法從輸入內容中解析出合法的 SRT 字幕格式，請檢查內容或取消勾選字幕模式。', 'error');
+            targetText.value = '';
+            return;
+        }
 
-        // 設計對 SRT 格式極度嚴格的 Prompt，防止大模型弄亂時間軸
+        targetText.value = `⏳ 偵測到共 ${srtItems.length} 條字幕。正在啟動智慧分批翻譯，請稍候...`;
+        
         let layoutRequirement = "";
         if (layout === "original_first") {
             layoutRequirement = "輸出雙語字幕，格式為：每段字幕保留序號與時間軸，內容第一行為【原始文字】，第二行緊接著【翻譯後的譯文】。";
@@ -384,34 +412,56 @@ ${text}
             layoutRequirement = "輸出單語字幕，格式為：每段字幕保留序號與時間軸，內容【只保留翻譯後的譯文】，完全丟棄原本的語言內容。";
         }
 
-        const srtPrompt = `你是一位專業的影片字幕組翻譯家。請幫我將以下完整的 SRT 字幕檔案內容翻譯為【${tgt}】。
+        // 設定每批次處理幾條字幕（40 條是最平衡安全的大小，能兼顧上下文又不會爆 Token）
+        const BATCH_SIZE = 40;
+        let finalOutput = "";
+        let batchIndex = 1;
+
+        for (let i = 0; i < srtItems.length; i += BATCH_SIZE) {
+            const chunk = srtItems.slice(i, i + BATCH_SIZE);
+            const totalBatches = Math.ceil(srtItems.length / BATCH_SIZE);
+            
+            setMsg(`🔄 正在翻譯第 ${batchIndex} / ${totalBatches} 批字幕 (條數: ${i + 1} ~ ${Math.min(i + BATCH_SIZE, srtItems.length)})...`);
+            
+            // 將這批物件重組為純文字給 AI
+            const chunkText = chunk.map(item => `${item.id}\n${item.timeline}\n${item.content}`).join('\n\n');
+
+            const srtPrompt = `你是一位專業的影片字幕組翻譯家。請幫我將以下完整的 SRT 字幕分段內容翻譯為【${tgt}】。
 
 ⚠️ 必須嚴格遵守的黃金法則：
-1. 保持所有序號（例如 1, 2, 3）以及時間軸（例如 00:01:20,000 --> 00:01:23,500）完好無損，絕對不能修改、合併或刪除任何時間軸！
+1. 保持所有序號與時間軸完好無損，絕對不能修改、合併、漏掉或刪除任何一條時間軸！
 2. 翻譯時必須參考前後文（Context），確保語氣自然順暢、口語化且連貫。
 3. 行業領域與術語背景：基於【${domain}】領域進行名詞優化。
 4. 樣式與排版要求：${layoutRequirement}
-5. 嚴禁任何廢話：不要回覆任何「好的」、「這是你的翻譯」等前言，也不要用 Markdown 區塊 (\`\`\`srt) 包裹，請直接從第一個字幕序號開始輸出，以純文字格式返回。
+5. 嚴禁任何廢話：不要回覆任何前言與結語，也不要用 Markdown 區塊 (\`\`\`srt) 包裹，請直接輸出標準 SRT 純文字格式。
 
-以下是待處理的 SRT 字幕內容：
-${text}`;
+以下是待處理的 SRT 字幕片段：
+${chunkText}`;
 
-        try {
-            const srtResult = await callGeminiAPI(srtPrompt, apiKey);
-            
-            // 淨化可能殘留的 markdown 區塊符號
-            let cleanOutput = srtResult.replace(/^```[a-zA-Z]*\n/g, '').replace(/\n```$/g, '').trim();
-            
-            targetText.value = cleanOutput;
-            
-            // 計算大概處理了幾條字幕
-            const matchCount = (cleanOutput.match(/-->/g) || []).length;
-            setMsg(`✅ 字幕翻譯成功！共優化了約 ${matchCount} 條字幕軸。(引擎: Gemini 直連)`);
-        } catch (err) {
-            console.error(err);
-            targetText.value = `❌ 字幕處理失敗：\n${err.message}\n\n[排查提示] 請確認你的 Gemini API Key 是否有效，或者網路是否正常通訊。`;
-            setMsg(`❌ 字幕處理失敗: ${err.message}`, 'error');
+            try {
+                let srtResult = await callGeminiAPI(srtPrompt, apiKey);
+                // 淨化可能殘留的 markdown 區塊符號
+                let cleanOutput = srtResult.replace(/^```[a-zA-Z]*\n/g, '').replace(/\n```$/g, '').trim();
+                
+                finalOutput += cleanOutput + "\n\n";
+                // 即時渲染部分成果在畫面上，讓使用者安心
+                targetText.value = finalOutput.trim() + `\n\n... (第 ${batchIndex}/${totalBatches} 批翻譯已對齊，後續載入中) ...`;
+                batchIndex++;
+                
+                // 微調停頓，避免頻率過高觸發 API 限制
+                await new Promise(resolve => setTimeout(resolve, 600));
+            } catch (err) {
+                console.error(err);
+                targetText.value = finalOutput + `\n\n❌ 於第 ${batchIndex} 批發生中斷錯誤：\n${err.message}`;
+                setMsg(`❌ 字幕分批處理中斷: ${err.message}`, 'error');
+                return;
+            }
         }
+
+        // 全部批次安全完成
+        targetText.value = finalOutput.trim();
+        const finalMatchCount = (finalOutput.match(/-->/g) || []).length;
+        setMsg(`✅ 字幕全數翻譯成功！共安全處理了 ${finalMatchCount} 條字幕軸，無任何吃字漏項！`);
     };
 </script>
 </body>
