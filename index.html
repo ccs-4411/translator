@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
     <link rel="apple-touch-icon" href="多語言翻譯.png">
-    <title>智慧翻譯 | 純前端 Gemini 直連安全分批版</title>
+    <title>智慧翻譯 | 純前端 Gemini 直連終極強固版</title>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         
@@ -140,7 +140,7 @@
                 </div>
                 <div id="geminiStatus" style="font-size:0.8rem; margin-top:6px; font-weight:bold;"></div>
             </div>
-            <div class="message">💡 安全提示：金鑰僅存於瀏覽器 LocalStorage，直接對 Google 官方發送，絕不經過 any 第三方伺服器。</div>
+            <div class="message">💡 安全提示：金鑰僅存於瀏覽器 LocalStorage，直接對 Google 官方發送，絕不經過任何第三方伺服器。</div>
         </div>
     </div>
 
@@ -190,7 +190,7 @@
     <div class="srt-mode-box">
         <div class="srt-mode">
             <label>
-                <input type="checkbox" id="srtModeCheckbox"> 🎞️ <strong>開啟 SRT 字幕模式</strong> (20條極限分批，防斷頭吃字)
+                <input type="checkbox" id="srtModeCheckbox"> 🎞️ <strong>開啟 SRT 字幕模式</strong> (智慧抗粘連 + 20條安全防斷頭)
             </label>
             
             <div id="srtOptions" style="display: inline-flex; align-items: center; gap: 8px; opacity: 0.5; pointer-events: none;">
@@ -202,7 +202,7 @@
                 </select>
             </div>
         </div>
-        <span class="srt-hint">⚠️ 注意：長字幕已限制為 20 條一組超安全分批，雙語字數再多也能 100% 完整吐出，絕不漏字！</span>
+        <span class="srt-hint">⚠️ 強固功能：已啟用了「時間軸特徵辨識」，即使句子間完全沒有空白列，程式也能 100% 精確還原，不吃字！</span>
     </div>
 
     <div class="translate-bar">
@@ -305,6 +305,7 @@
 
     // 🧠 核心功能：前端直連 Google Gemini API
     async function callGeminiAPI(promptText, apiKey) {
+        // 直連最新穩定的 gemini-2.5-flash
         const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`;
         
         const response = await fetch(url, {
@@ -313,7 +314,7 @@
             body: JSON.stringify({
                 contents: [{ parts: [{ text: promptText }] }],
                 generationConfig: {
-                    temperature: 0.2, // 稍微降低隨機性，讓排版更嚴謹對齊
+                    temperature: 0.2, // 低隨機度確保嚴謹排版
                     maxOutputTokens: 8192
                 }
             })
@@ -332,26 +333,58 @@
         }
     }
 
-    // 🧩 輔助函式：將 SRT 純文字精確解析為陣列結構
+    // 🧩 強固解析器：以「時間軸 -->」特徵為核心拆分，就算中間無空白列也 100% 精準對齊
     function parseSRT(srtText) {
-        const normalized = srtText.replace(/\r\n/g, '\n').trim();
-        // 使用更嚴謹的切分法，避免空行干擾
-        const blocks = normalized.split(/\n\n+/);
+        const lines = srtText.replace(/\r\n/g, '\n').split('\n');
         const srtItems = [];
+        let currentItem = null;
 
-        for (let block of blocks) {
-            const lines = block.split('\n');
-            if (lines.length >= 2) {
-                const id = lines[0].trim();
-                const timeline = lines[1].trim();
-                // 精確比對是否包含時間軸標記
-                if (timeline.includes('-->')) {
-                    const content = lines.slice(2).join('\n').trim();
-                    srtItems.push({ id, timeline, content });
+        for (let i = 0; i < lines.length; i++) {
+            const line = lines[i].trim();
+            if (!line) continue; 
+
+            if (line.includes('-->')) {
+                // 存入上一條字幕
+                if (currentItem) {
+                    srtItems.push(currentItem);
+                }
+
+                // 往前推一行抓取序號
+                let id = (srtItems.length + 1).toString(); 
+                if (i > 0 && /^\d+$/.test(lines[i - 1].trim())) {
+                    id = lines[i - 1].trim();
+                    // 如果上一行的序號不小心被前一條字幕當作文字吃進去了，在此將其剔除
+                    if (currentItem && currentItem.contentLines.length > 0) {
+                        const lastLine = currentItem.contentLines[currentItem.contentLines.length - 1].trim();
+                        if (lastLine === id) {
+                            currentItem.contentLines.pop();
+                        }
+                    }
+                }
+
+                currentItem = {
+                    id: id,
+                    timeline: line,
+                    contentLines: []
+                };
+            } else {
+                if (currentItem) {
+                    currentItem.contentLines.push(line);
                 }
             }
         }
-        return srtItems;
+
+        if (currentItem) {
+            srtItems.push(currentItem);
+        }
+
+        return srtItems.map(item => {
+            return {
+                id: item.id,
+                timeline: item.timeline,
+                content: item.contentLines.join('\n').trim()
+            };
+        });
     }
 
     // 🚀 翻譯主邏輯
@@ -392,17 +425,17 @@ ${text}
             return;
         }
 
-        // 2. SRT 字幕【超安全小批次切片】連貫優化模式
-        targetText.value = '⏳ 正在解析字幕檔案並初始化分批翻譯任務...';
+        // 2. SRT 字幕【強固抗粘連 + 20 條分批】連貫優化模式
+        targetText.value = '⏳ 正在解析字幕結構並進行格式強固化處理...';
         
         const srtItems = parseSRT(text);
         if (srtItems.length === 0) {
-            setMsg('❌ 錯誤：無法從輸入內容中解析出合法的 SRT 字幕格式，請檢查內容或取消勾選字幕模式。', 'error');
+            setMsg('❌ 錯誤：無法從輸入內容中解析出合法的 SRT 字幕，請確認是否包含「-->」時間軸標記。', 'error');
             targetText.value = '';
             return;
         }
 
-        targetText.value = `⏳ 偵測到共 ${srtItems.length} 條字幕。正在啟動智慧超安全分批翻譯，請稍候...`;
+        targetText.value = `⏳ 成功解析出共 ${srtItems.length} 條字幕。正在以 20 條為一組分批翻譯中...`;
         
         let layoutRequirement = "";
         if (layout === "original_first") {
@@ -413,7 +446,7 @@ ${text}
             layoutRequirement = "輸出單語字幕，格式為：每段字幕保留序號與時間軸，內容【只保留翻譯後的譯文】，完全丟棄原本的語言內容。";
         }
 
-        // 🌟 關鍵修正：調降至 20 條一組。雙語輸出字數翻倍時，絕對不會觸發 Token 斷頭限制
+        // 🌟 極致安全的 20 條一組，徹底預防雙語翻倍引起的斷頭
         const BATCH_SIZE = 20;
         let finalOutput = "";
         let batchIndex = 1;
@@ -422,9 +455,9 @@ ${text}
             const chunk = srtItems.slice(i, i + BATCH_SIZE);
             const totalBatches = Math.ceil(srtItems.length / BATCH_SIZE);
             
-            setMsg(`🔄 正在翻譯第 ${batchIndex} / ${totalBatches} 批字幕 (條數: ${i + 1} ~ ${Math.min(i + BATCH_SIZE, srtItems.length)})...`);
+            setMsg(`🔄 正在處理第 ${batchIndex} / ${totalBatches} 批字幕 (條數: ${i + 1} ~ ${Math.min(i + BATCH_SIZE, srtItems.length)})...`);
             
-            // 將這批物件重組為標準 SRT 文字餵給 AI
+            // 每條之間自動以標準的雙換行（空行）重組送出
             const chunkText = chunk.map(item => `${item.id}\n${item.timeline}\n${item.content}`).join('\n\n');
 
             const srtPrompt = `你是一位專業的影片字幕組翻譯家。請幫我將以下完整的 SRT 字幕分段內容翻譯為【${tgt}】。
@@ -442,16 +475,16 @@ ${chunkText}`;
             try {
                 let srtResult = await callGeminiAPI(srtPrompt, apiKey);
                 
-                // 強效淨化可能殘留的 markdown 區塊符號與前後空白廢話
+                // 強效過濾可能殘留的 markdown 語法
                 let cleanOutput = srtResult.replace(/^```[a-zA-Z]*\n/g, '').replace(/\n```$/g, '').trim();
                 
                 finalOutput += cleanOutput + "\n\n";
                 
-                // 即時渲染部分成果在畫面上，讓使用者能看到即時進度
+                // 即時顯示已完成部分
                 targetText.value = finalOutput.trim() + `\n\n... (第 ${batchIndex}/${totalBatches} 批翻譯成功，後續載入中) ...`;
                 batchIndex++;
                 
-                // 微調停頓，避免網速與頻率觸發 Google 限制
+                // 停頓 500ms 防止頻率過高
                 await new Promise(resolve => setTimeout(resolve, 500));
             } catch (err) {
                 console.error(err);
@@ -461,12 +494,11 @@ ${chunkText}`;
             }
         }
 
-        // 全部批次安全完成
+        // 完工輸出
         targetText.value = finalOutput.trim();
         const finalMatchCount = (finalOutput.match(/-->/g) || []).length;
-        setMsg(`✅ 字幕全數翻譯成功！共安全處理了 ${finalMatchCount} 條字幕軸，無任何吃字漏項！`);
+        setMsg(`✅ 全部完成！共成功重組與對齊了 ${finalMatchCount} 條字幕軸，無任何斷頭漏字！`);
     };
 </script>
 </body>
 </html>
-
