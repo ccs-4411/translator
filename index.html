@@ -140,7 +140,7 @@
                 </div>
                 <div id="geminiStatus" style="font-size:0.8rem; margin-top:6px; font-weight:bold;"></div>
             </div>
-            <div class="message">💡 安全提示：金鑰僅存於瀏覽器 LocalStorage，直接對 Google 官方發送，絕不經過任何第三方伺服器。</div>
+            <div class="message">💡 安全提示：金鑰僅存於瀏覽器 LocalStorage，直接對 Google 官方發送，絕不經過 any 第三方伺服器。</div>
         </div>
     </div>
 
@@ -190,7 +190,7 @@
     <div class="srt-mode-box">
         <div class="srt-mode">
             <label>
-                <input type="checkbox" id="srtModeCheckbox"> 🎞️ <strong>開啟 SRT 字幕模式</strong> (抗粘連 + 智慧防塞車自動重試)
+                <input type="checkbox" id="srtModeCheckbox"> 🎞️ <strong>開啟 SRT 字幕模式</strong> (抗粘連 + 即時日誌同步輸出 + 強效自動重試)
             </label>
             
             <div id="srtOptions" style="display: inline-flex; align-items: center; gap: 8px; opacity: 0.5; pointer-events: none;">
@@ -202,7 +202,7 @@
                 </select>
             </div>
         </div>
-        <span class="srt-hint">⚡ 核心升級：整合與 Python 相同的 RETRY 機制，如遇 Google 伺服器忙碌，網頁會自動冷卻重試，拒絕中斷！</span>
+        <span class="srt-hint">🚀 安全防護：新增「即時同步輸出」，就算翻譯中途被 Google 掐斷，前面翻好的字幕也會安全保留在結果框內！</span>
     </div>
 
     <div class="translate-bar">
@@ -217,7 +217,7 @@
             <div style="flex:1"></div>
             <div><button id="copyBtn">📋 複製結果</button><button id="clearTarget" class="danger">清除</button></div>
         </div>
-        <textarea id="targetText" placeholder="翻譯結果會顯示在此處..." readonly></textarea>
+        <textarea id="targetText" placeholder="翻譯結果會即時在此處一條一條同步顯示..." readonly></textarea>
     </div>
 </div>
 
@@ -241,7 +241,6 @@
     }
     populateSelects();
 
-    // 金鑰管理
     const geminiInput = document.getElementById('geminiKey');
     const geminiStatus = document.getElementById('geminiStatus');
     
@@ -303,7 +302,6 @@
     
     document.getElementById('accordionToggle').onclick = () => accordion.classList.toggle('hide');
 
-    // 🧠 核心功能：前端直連 Google Gemini API
     async function callGeminiAPI(promptText, apiKey) {
         const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`;
         
@@ -328,11 +326,10 @@
         try {
             return data.candidates[0].content.parts[0].text;
         } catch (e) {
-            throw new Error("無法解析 Gemini 回傳的結構，請檢查輸入內容。");
+            throw new Error("無法解析 Gemini 回傳的結構。");
         }
     }
 
-    // 🧩 強固解析器：以「時間軸 -->」特徵為核心拆分，就算中間無空白列也 100% 精準對齊
     function parseSRT(srtText) {
         const lines = srtText.replace(/\r\n/g, '\n').split('\n');
         const srtItems = [];
@@ -383,13 +380,12 @@
         });
     }
 
-    // 🚀 翻譯主邏輯
     translateBtn.onclick = async () => {
         const text = sourceText.value.trim();
         if (!text) { setMsg('請輸入內容', 'error'); return; }
         
         const apiKey = localStorage.getItem('gemini_key') || '';
-        if (!apiKey) { setMsg('❌ 錯誤：未偵測到 Gemini API Key，請展開頂部選單並儲存金鑰！', 'error'); return; }
+        if (!apiKey) { setMsg('❌ 錯誤：未偵測到 Gemini API Key！', 'error'); return; }
 
         const tgt = targetLang.value;
         const src = sourceLang.value;
@@ -397,7 +393,6 @@
         const layout = srtLayoutSelect.value;
 
         if (!srtModeCheckbox.checked) {
-            // 普通文本翻譯模式... (略，保持不變)
             if (src === tgt && src !== 'auto') { targetText.value = text; setMsg('來源與目標語言相同'); return; }
             targetText.value = '⏳ 正在直連 Google Gemini 翻譯中...';
             setMsg('🔄 傳送至 Gemini API...');
@@ -413,18 +408,15 @@
             return;
         }
 
-        // 2. SRT 字幕連貫優化模式
-        targetText.value = '⏳ 正在解析字幕結構並進行格式強固化處理...';
+        targetText.value = ''; // 🌟 清空，準備即時 Log 輸出
+        setMsg('⏳ 正在解析字幕結構並進行格式強固化處理...');
         
         const srtItems = parseSRT(text);
         if (srtItems.length === 0) {
-            setMsg('❌ 錯誤：無法從輸入內容中解析出合法的 SRT 字幕，請確認是否包含「-->」時間軸標記。', 'error');
-            targetText.value = '';
+            setMsg('❌ 錯誤：無法解析出合法的 SRT 字幕。', 'error');
             return;
         }
 
-        targetText.value = `⏳ 成功解析出共 ${srtItems.length} 條字幕。正在啟動智慧自動重試翻譯機制...`;
-        
         let layoutRequirement = "";
         if (layout === "original_first") {
             layoutRequirement = "輸出雙語字幕，格式為：每段字幕保留序號與時間軸，內容第一行為【原始文字】，第二行緊接著【翻譯後的譯文】。";
@@ -434,9 +426,8 @@
             layoutRequirement = "輸出單語字幕，格式為：每段字幕保留序號與時間軸，內容【只保留翻譯後的譯文】，完全丟棄原本的語言內容。";
         }
 
-        // 🌟 配合物理切片，設定極安全單批大小
-        const BATCH_SIZE = 20;
-        const MAX_RETRY = 3; // 💾 完美承襲你當初 Python 設定的 RETRY = 3
+        const BATCH_SIZE = 20; // 🌟 保持安全小包，避免大請求被直接 Timeout
+        const MAX_RETRY = 3; 
         let finalOutput = "";
         let batchIndex = 1;
 
@@ -460,26 +451,25 @@ ${chunkText}`;
             let srtResult = "";
             let success = false;
             
-            // 🔄 核心機制：網頁端智慧型 RETRY 循環
             for (let retryCount = 0; retryCount <= MAX_RETRY; retryCount++) {
                 try {
                     if (retryCount > 0) {
-                        setMsg(`⚠️ 偵測到伺服器塞車，正在進行第 ${retryCount} / ${MAX_RETRY} 次自動冷卻重試...`, 'warning');
-                        // 遇到錯誤時逐次拉長等待時間 (指數型退避)
-                        await new Promise(resolve => setTimeout(resolve, retryCount * 3000)); 
+                        // 🌟 加重冷卻時間 (5秒、15秒、30秒)，給伺服器足夠的排隊釋放時間
+                        let cooldown = retryCount === 1 ? 5000 : retryCount === 2 ? 15000 : 30000;
+                        setMsg(`⚠️ Google 伺服器忙碌中... 正在冷卻並進行第 ${retryCount}/${MAX_RETRY} 次自動重試（等待 ${cooldown/1000} 秒）...`, 'warning');
+                        await new Promise(resolve => setTimeout(resolve, cooldown)); 
                     } else {
                         setMsg(`🔄 正在處理第 ${batchIndex} / ${totalBatches} 批字幕 (條數: ${i + 1} ~ ${Math.min(i + BATCH_SIZE, srtItems.length)})...`);
                     }
 
                     srtResult = await callGeminiAPI(srtPrompt, apiKey);
                     success = true;
-                    break; // 成功就直接跳出 retry 循環
+                    break; 
                 } catch (err) {
-                    console.warn(`第 ${retryCount} 次嘗試失敗: ${err.message}`);
+                    console.warn(`第 ${retryCount} 次重試失敗: ${err.message}`);
                     if (retryCount === MAX_RETRY) {
-                        // 真的試了3次都死掉，才回報錯誤
-                        targetText.value = finalOutput + `\n\n❌ 已重試 ${MAX_RETRY} 次均失敗。最後一次錯誤：\n${err.message}`;
-                        setMsg(`❌ 字幕分批處理中斷 (已自動重試 ${MAX_RETRY} 次): ${err.message}`, 'error');
+                        targetText.value = (finalOutput + `\n\n❌ 字幕處理在中途被中斷 (已自動重試 ${MAX_RETRY} 次均失敗)。\n您可以複製上方已翻譯好的部分，後續未翻譯的字幕可以分段重新貼上處理。\n最後錯誤訊息：${err.message}`).trim();
+                        setMsg(`❌ 字幕處理中斷: ${err.message}`, 'error');
                         return;
                     }
                 }
@@ -487,16 +477,22 @@ ${chunkText}`;
 
             if (success) {
                 let cleanOutput = srtResult.replace(/^```[a-zA-Z]*\n/g, '').replace(/\n```$/g, '').trim();
+                
+                // 🌟 核心改良：即時 append（附加）到 finalOutput，並立刻更新到畫面上
                 finalOutput += cleanOutput + "\n\n";
-                targetText.value = finalOutput.trim() + `\n\n... (第 ${batchIndex}/${totalBatches} 批翻譯成功，後續載入中) ...`;
+                targetText.value = finalOutput.trim(); 
+                
+                // 讓滾動條自動滾動到最下方，方便即時檢視日誌
+                targetText.scrollTop = targetText.scrollHeight;
+                
                 batchIndex++;
                 
-                // 每批之間正常冷卻 1.5 秒，兼顧速度與防封鎖
+                // 正常情況下每批之間安全冷卻 1.5 秒
                 await new Promise(resolve => setTimeout(resolve, 1500));
             }
         }
 
-        targetText.value = finalOutput.trim();
+        // 全部完工後的最終校對提示
         const finalMatchCount = (finalOutput.match(/-->/g) || []).length;
         setMsg(`✅ 全部完成！共成功重組與對齊了 ${finalMatchCount} 條字幕軸，無任何斷頭漏字！`);
     };
