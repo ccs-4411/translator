@@ -9,14 +9,14 @@ from flask import Flask, request, jsonify, send_from_directory
 from flask_cors import CORS
 
 # =========================================================
-# 基本設定
+# 基本設定與日誌
 # =========================================================
 base_dir = os.path.dirname(os.path.abspath(__file__))
 
 app = Flask(__name__, static_folder=base_dir, static_url_path='')
 CORS(app)
 
-# 設定日誌
+# 設定標準日誌輸出格式
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
 ENV_GEMINI_KEY = os.environ.get("GEMINI_API_KEY", "")
@@ -24,7 +24,7 @@ ENV_DEEPL_KEY = os.environ.get("DEEPL_API_KEY", "")
 DEFAULT_GEMINI_MODEL = "gemini-2.5-flash"
 
 # =========================================================
-# 語系對照
+# 語系對照表
 # =========================================================
 LANG_CONFIG = {
     "auto": {"google": "auto", "deepl": "auto", "name": "自動偵測的語言"},
@@ -39,7 +39,7 @@ LANG_CONFIG = {
 }
 
 # =========================================================
-# 行業 / 領域設定
+# 專業領域提示詞 (System Prompt) 設定
 # =========================================================
 DOMAIN_CONFIG = {
     "general": {
@@ -160,7 +160,7 @@ DOMAIN_CONFIG = {
 }
 
 # =========================================================
-# Prompt 生成器
+# 提示詞 (Prompt) 生成器
 # =========================================================
 def generate_dynamic_prompt(domain, src_name, tgt_name):
     config = DOMAIN_CONFIG.get(domain, DOMAIN_CONFIG["general"])
@@ -224,13 +224,13 @@ def build_batch_instruction(domain, src_name, tgt_name):
 
 
 # =========================================================
-# 文字清洗 / SRT 解析工具
+# 資料清洗 / SRT 結構解析工具
 # =========================================================
 def parse_srt(srt_string):
-    """ 精準的 正規表示式 SRT 字幕區塊解析 """
+    """ 使用穩健的正規表示式解析 SRT 字幕區塊 """
     srt_string = srt_string.replace('\r\n', '\n').replace('\r', '\n')
     
-    # 匹配模式：數字ID + 換行 + 時間戳戳碼 + 換行 + 內文
+    # 匹配模式：數字ID \n 時間戳 \n 字幕內容 (直到下個區塊或結束)
     pattern = r'(\d+)\n([0-9:, \t\-衰>]+)\n(.*?)(?=\n\s*\n|\n\d+\n[0-9:, \t\-衰>]+|\Z)'
     matches = re.finditer(pattern, srt_string, re.DOTALL)
     
@@ -240,7 +240,7 @@ def parse_srt(srt_string):
         time_sync = match.group(2).strip()
         text = match.group(3).strip()
         
-        if '衰>' in time_sync:
+        if '衰>' in time_sync:  # 修復部分剪輯軟體產生的時間碼異常
             time_sync = time_sync.replace('衰>', '-->')
         elif '-->' not in time_sync:
             continue
@@ -251,7 +251,7 @@ def parse_srt(srt_string):
             "text": text
         })
         
-    # 備用方案
+    # 備用傳統解析方案
     if not subtitles:
         blocks = re.split(r'\n\s*\n', srt_string.strip())
         for block in blocks:
@@ -273,7 +273,7 @@ def parse_srt(srt_string):
 
 
 def normalize_subtitle_text(text):
-    """ 清理字幕內的文字換行，使其適用於單個字幕塊 """
+    """ 字幕專用清洗：去除頭尾多餘空白，壓縮異常換行 """
     if not text:
         return ""
     text = str(text).replace("\r\n", "\n").replace("\r", "\n").strip()
@@ -283,7 +283,7 @@ def normalize_subtitle_text(text):
 
 
 def normalize_article_text(text):
-    """ 用於一般文章/非字幕的文字清理，保留文章段落的大空白與段落感 """
+    """ 文章專用清洗：僅標準化換行符，完好保留使用者的段落與大空白 """
     if not text:
         return ""
     text = str(text).replace("\r\n", "\n").replace("\r", "\n").strip()
@@ -291,7 +291,7 @@ def normalize_article_text(text):
 
 
 def chunk_subtitles(subtitles, domain="general"):
-    """ SRT 字幕分批封裝策略 """
+    """ SRT 字幕分批打包策略 """
     if domain in ["baseball", "basketball"]:
         max_items = 20
         max_chars = 4200
@@ -325,7 +325,7 @@ def chunk_subtitles(subtitles, domain="general"):
 
 
 def looks_untranslated(src_text, translated_text, target_lang):
-    """ 檢查是否發生漏翻（即回傳和原文英文字母重合度過高） """
+    """ 檢查是否發生漏翻（重合度過高或中文字幕殘留大量英文） """
     src_text = (src_text or "").strip()
     translated_text = (translated_text or "").strip()
 
@@ -344,23 +344,25 @@ def looks_untranslated(src_text, translated_text, target_lang):
 
 
 # =========================================================
-# 翻譯核心引擎
+# 翻譯核心底層引擎
 # =========================================================
 def translate_google(text, src, tgt):
+    """ 免費免金鑰 Google 翻譯 API """
     try:
         src_code = LANG_CONFIG.get(src, {}).get("google", "auto")
         tgt_code = LANG_CONFIG.get(tgt, {}).get("google", "en")
-        url = f"https://translate.googleapis.com/translate_a/single?client=gtx&sl={src_code}&tl={tgt_code}&dt=t&q={requests.utils.quote(text)}"
+        url = f"[https://translate.googleapis.com/translate_a/single?client=gtx&sl=](https://translate.googleapis.com/translate_a/single?client=gtx&sl=){src_code}&tl={tgt_code}&dt=t&q={requests.utils.quote(text)}"
         resp = requests.get(url, timeout=20)
         if resp.status_code == 200:
             data = resp.json()
             return "".join(part[0] for part in data[0] if part[0]) or text
     except Exception as e:
-        app.logger.warning(f"Google 翻譯異常: {e}")
+        app.logger.warning(f"Google 翻譯底層異常: {e}")
     return text
 
 
 def translate_deepl(text, src, tgt, api_key):
+    """ DeepL 翻譯 API """
     if not api_key:
         raise ValueError("DeepL API Key 未設定")
 
@@ -376,7 +378,7 @@ def translate_deepl(text, src, tgt, api_key):
 
     headers = {"Authorization": f"DeepL-Auth-Key {api_key}"}
     resp = requests.post(
-        "https://api-free.deepl.com/v2/translate",
+        "[https://api-free.deepl.com/v2/translate](https://api-free.deepl.com/v2/translate)",
         data=params,
         headers=headers,
         timeout=20
@@ -386,7 +388,7 @@ def translate_deepl(text, src, tgt, api_key):
 
 
 def translate_gemini(text, src, tgt, api_key, domain="general"):
-    """ 用於單句或文章翻譯 """
+    """ Gemini 單句/長文直發 API """
     if not api_key:
         raise ValueError("Gemini API Key 未設定")
 
@@ -394,7 +396,7 @@ def translate_gemini(text, src, tgt, api_key, domain="general"):
     tgt_name = LANG_CONFIG.get(tgt, {}).get("name", tgt)
     system_instruction = generate_dynamic_prompt(domain, src_name, tgt_name)
 
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/{DEFAULT_GEMINI_MODEL}:generateContent?key={api_key}"
+    url = f"[https://generativelanguage.googleapis.com/v1beta/models/](https://generativelanguage.googleapis.com/v1beta/models/){DEFAULT_GEMINI_MODEL}:generateContent?key={api_key}"
     payload = {
         "contents": [{"parts": [{"text": text}]}],
         "system_instruction": {"parts": [{"text": system_instruction}]},
@@ -412,11 +414,11 @@ def translate_gemini(text, src, tgt, api_key, domain="general"):
     try:
         return data["candidates"][0]["content"]["parts"][0]["text"].strip()
     except (KeyError, IndexError):
-        raise Exception("無法解析 Gemini 回應文字")
+        raise Exception("無法解析 Gemini 回應內容")
 
 
 def translate_gemini_batch(subtitles, src, tgt, api_key, domain="general"):
-    """ 用於 SRT 字幕的 結構化 JSON 批次翻譯 """
+    """ Gemini 結構化 JSON 字幕批次翻譯 API """
     if not api_key:
         raise ValueError("Gemini API Key 未設定")
     if not subtitles:
@@ -434,7 +436,7 @@ def translate_gemini_batch(subtitles, src, tgt, api_key, domain="general"):
         })
 
     input_json_str = json.dumps(input_data, ensure_ascii=False)
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/{DEFAULT_GEMINI_MODEL}:generateContent?key={api_key}"
+    url = f"[https://generativelanguage.googleapis.com/v1beta/models/](https://generativelanguage.googleapis.com/v1beta/models/){DEFAULT_GEMINI_MODEL}:generateContent?key={api_key}"
     payload = {
         "contents": [{"parts": [{"text": input_json_str}]}],
         "system_instruction": {"parts": [{"text": batch_instruction}]},
@@ -452,7 +454,7 @@ def translate_gemini_batch(subtitles, src, tgt, api_key, domain="general"):
         try:
             resp = requests.post(url, json=payload, timeout=90)
             if resp.status_code == 429:
-                app.logger.warning(f"Gemini 429 流量受限，等待 10 秒後重試...")
+                app.logger.warning(f"Gemini 觸發 429 流量受限，等待 10 秒後重試...")
                 time.sleep(10)
                 continue
 
@@ -462,7 +464,7 @@ def translate_gemini_batch(subtitles, src, tgt, api_key, domain="general"):
             data = resp.json()
             result_text = data["candidates"][0]["content"]["parts"][0]["text"].strip()
 
-            # 防止 LLM 沒完全遵循 MimeType 回傳 Markdown 的防禦工程
+            # 剝離 Markdown 標記防禦工程
             if "```" in result_text:
                 result_text = re.sub(r'^```json\s*', '', result_text, flags=re.IGNORECASE)
                 result_text = re.sub(r'^```\s*', '', result_text)
@@ -470,21 +472,21 @@ def translate_gemini_batch(subtitles, src, tgt, api_key, domain="general"):
 
             translated_list = json.loads(result_text)
             if not isinstance(translated_list, list):
-                raise Exception("Gemini 回傳結構非標準 JSON Array")
+                raise Exception("Gemini 回傳格式非 JSON Array 陣列")
 
             return translated_list
 
         except Exception as e:
             last_error = e
-            app.logger.error(f"第 {i+1} 次批次翻譯嘗試失敗: {e}")
+            app.logger.error(f"批次翻譯第 {i+1} 次嘗試失敗: {e}")
             if i < retries - 1:
                 time.sleep(2)
 
-    raise last_error if last_error else Exception("Gemini 批次翻譯完全失敗")
+    raise last_error if last_error else Exception("Gemini 批次翻譯重試耗盡失敗")
 
 
 def safe_single_translate(text, src, tgt, domain, gemini_key, deepl_key, allow_gemini=False):
-    """ 單句備援安全翻譯調度中心 """
+    """ 字幕單句補翻/安全調度中心 """
     text = normalize_subtitle_text(text)
     if not text:
         return ""
@@ -499,7 +501,7 @@ def safe_single_translate(text, src, tgt, domain, gemini_key, deepl_key, allow_g
         try:
             return normalize_subtitle_text(translate_deepl(text, src, tgt, deepl_key))
         except Exception as e:
-            app.logger.warning(f"備援單句 DeepL 失敗，改用 Google: {e}")
+            app.logger.warning(f"備援單句 DeepL 失敗，自動降級 Google: {e}")
 
     return normalize_subtitle_text(translate_google(text, src, tgt))
 
@@ -514,7 +516,7 @@ def index():
 
 @app.route('/translate', methods=['POST'])
 def translate_text_endpoint():
-    """ 端點一：普通文章 / 文本翻譯 """
+    """ 端點一：普通文章 / 文本段落翻譯（具備熔斷無縫切換 Google 功能） """
     try:
         data = request.get_json() or {}
         text = normalize_article_text(data.get("text", ""))
@@ -527,15 +529,18 @@ def translate_text_endpoint():
         if not text.strip():
             return jsonify({"error": "沒有輸入任何文字"}), 400
 
-        # 首選 Gemini
+        # 首選：Gemini 翻譯長文
         if gemini_key:
             try:
                 result = translate_gemini(text, src, tgt, gemini_key, domain)
                 return jsonify({"result": result, "engine": "Gemini"})
             except Exception as e:
-                app.logger.warning(f"文章翻譯：Gemini 失敗，轉向備援引擎: {e}")
+                # 【核心修改點】Gemini 爆額度或出錯，立刻無縫由 Google 接手
+                app.logger.warning(f"文章翻譯：Gemini 失敗（可能額度用盡），立刻切換 Google 翻譯。錯誤: {e}")
+                result = translate_google(text, src, tgt)
+                return jsonify({"result": result, "engine": "Google (Gemini額度爆用自動接手)"})
 
-        # 次選 DeepL (特殊語系優先)
+        # 次選：DeepL (特殊語系優先)
         if deepl_key and tgt in ["ja", "ko"]:
             try:
                 result = translate_deepl(text, src, tgt, deepl_key)
@@ -543,7 +548,7 @@ def translate_text_endpoint():
             except Exception:
                 pass
 
-        # 最終備援 Google
+        # 最終備援：Google
         result = translate_google(text, src, tgt)
         return jsonify({"result": result, "engine": "Google"})
 
@@ -553,7 +558,7 @@ def translate_text_endpoint():
 
 @app.route('/translate_srt', methods=['POST'])
 def translate_srt_endpoint():
-    """ 端點二：標準 SRT 字幕文件翻譯 """
+    """ 端點二：標準 SRT 字幕文件翻譯（熔斷續翻機制：中途 Gemini 爆額度，Google 立刻接手翻完剩餘批次） """
     try:
         data = request.get_json() or {}
         srt_content = data.get("srt_content", "").strip()
@@ -578,21 +583,21 @@ def translate_srt_endpoint():
         fallback_used = False
         gemini_available = bool(gemini_key)
 
-        # 進行字幕分塊分批
+        # 進行字幕分批封裝
         chunks = chunk_subtitles(parsed_subs, domain=domain)
         total_chunks = len(chunks)
 
         app.logger.info(f"SRT 共 {len(parsed_subs)} 筆，切成 {total_chunks} 批（domain={domain}）")
         logs.append(f"SRT 共 {len(parsed_subs)} 筆，切成 {total_chunks} 批（domain={domain}）")
 
-        # 2) 迴圈處理每一批字幕
+        # 2) 逐批處理字幕
         for idx, chunk in enumerate(chunks, 1):
             app.logger.info(f"正在處理第 {idx}/{total_chunks} 批，內含 {len(chunk)} 筆字幕")
             logs.append(f"正在處理第 {idx}/{total_chunks} 批，內含 {len(chunk)} 筆字幕")
 
             batch_done = False
 
-            # A) 如果 Gemini 密鑰可用，走大模型批次翻譯
+            # A) 如果 Gemini 可用且未熔斷，嘗試大模型批次處理
             if gemini_available:
                 try:
                     batch_res = translate_gemini_batch(chunk, src, tgt, gemini_key, domain)
@@ -610,7 +615,7 @@ def translate_srt_endpoint():
                     if expected_ids != returned_ids:
                         raise Exception(f"第 {idx} 批回傳的字幕 ID 與原始 ID 不一致")
 
-                    # 安全複查：檢查回傳資料是否異常或漏翻
+                    # 複查漏翻狀況
                     for sub in chunk:
                         sub_id = str(sub["id"])
                         src_text = normalize_subtitle_text(sub["text"])
@@ -627,23 +632,24 @@ def translate_srt_endpoint():
 
                 except Exception as e:
                     err_text = str(e)
-                    app.logger.error(f"第 {idx} 批 Gemini 異常，強制切換至傳統備援：{err_text}")
-                    logs.append(f"第 {idx} 批 Gemini 異常，強制切換至傳統備援：{err_text}")
+                    app.logger.error(f"第 {idx} 批 Gemini 異常（可能額度用盡），強制觸發熔斷切換備援引擎：{err_text}")
+                    logs.append(f"第 {idx} 批 Gemini 異常（可能額度用盡），強制觸發熔斷切換備援引擎")
                     
-                    # 觸發熔斷機制：此批與後續批次直接改走單句翻譯防崩潰
+                    # 【核心熔斷點】一旦報錯，把可用標記設為 False。此批與後續所有批次，直接改走 Google 續翻，防止卡死
                     gemini_available = False
                     fallback_used = True
 
-            # B) 備援處理：逐筆調度 Google / DeepL 翻譯
+            # B) 備援處理：由 Google / DeepL 逐句接手翻完
             if not batch_done:
                 for sub in chunk:
                     sub_id = str(sub["id"])
                     src_text = normalize_subtitle_text(sub["text"])
+                    # safe_single_translate 內部因 allow_gemini=False，會自動調配 Google/DeepL 完成剩餘字幕
                     translated_map[sub_id] = safe_single_translate(
                         src_text, src, tgt, domain, gemini_key, deepl_key, allow_gemini=False
                     )
 
-        # 3) 重新高精度拼裝標準 SRT (核心修復：強制 \n\n 隔離區塊)
+        # 3) 重新拼接標準 SRT (強制使用雙換行 `\n\n` 隔離區塊)
         output_blocks = []
 
         for item in parsed_subs:
@@ -652,7 +658,7 @@ def translate_srt_endpoint():
             orig_text = normalize_subtitle_text(item["text"])
             trans_text = normalize_subtitle_text(translated_map.get(sub_id, ""))
 
-            # 一個字幕區塊內部的每一行（ID、時間、翻譯內容）
+            # 單個字幕塊內部行
             block_lines = [sub_id, time_sync]
 
             if layout_mode == "original_first":
@@ -670,15 +676,14 @@ def translate_srt_endpoint():
                 if trans_text:
                     block_lines.append(trans_text)
 
-            # 將區塊內用單行換行連結
             output_blocks.append("\n".join(block_lines))
 
-        # 核心亮點：大區塊與大區塊間，絕對只使用嚴格的兩個換行符組合，徹底杜絕無空白列的問題
+        # 精準隔離區塊，徹底杜絕時間戳前方無空白行的問題
         final_srt_output = "\n\n".join(output_blocks).strip() + "\n"
 
-        # 4) 識別與包裝狀態回傳
+        # 4) 包裝狀態與回傳描述
         if gemini_key:
-            engine_used = "Gemini 額度用完，中途自動切換備援" if fallback_used else f"Gemini 完整批次字幕翻譯（共 {total_chunks} 批）"
+            engine_used = "Gemini 額度用完/異常，已中途自動切換 Google 翻譯續翻完成" if fallback_used else f"Gemini 完整批次字幕翻譯（共 {total_chunks} 批）"
         else:
             engine_used = "安全備援引擎（DeepL / Google）" if (deepl_key and tgt in ["ja", "ko"]) else "安全備援引擎（Google）"
 
@@ -698,10 +703,9 @@ def translate_srt_endpoint():
 
 
 # =========================================================
-# 啟動應用程式
+# 啟動 Python 服務
 # =========================================================
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=int(os.environ.get('PORT', 5000)))
     app.run(host='0.0.0.0', port=int(os.environ.get('PORT', 5000)))
 
 
