@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
     <link rel="apple-touch-icon" href="多語言翻譯.png">
-    <title>智慧翻譯 | 純前端 Gemini 直連終極重試強固版</title>
+    <title>智慧翻譯 | 後端備援版 (Railway)</title>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         
@@ -127,20 +127,20 @@
 <div class="container">
     <div class="accordion hide" id="keyAccordion"> 
         <div class="accordion-header" id="accordionToggle">
-            <span>🔑 API 金鑰設定 (GitHub Pages 專用直連版)</span>
+            <span>🔑 API 金鑰設定 (後端備援版)</span>
             <span class="arrow">▼</span>
         </div>
         <div class="accordion-content">
             <div style="margin-bottom: 20px;">
-                <label>✨ Google Gemini API Key (‼️ 必須填寫，否則無法運行)</label>
+                <label>✨ Google Gemini API Key (可選，若已在 Railway 環境變數設定則免填)</label>
                 <div class="api-group">
-                    <div class="input-flex"><input type="password" id="geminiKey" placeholder="輸入 AI Studio 申請的 Gemini Key"></div>
+                    <div class="input-flex"><input type="password" id="geminiKey" placeholder="輸入 AI Studio 申請的 Gemini Key (非必要)"></div>
                     <button id="saveGemini" class="primary">💾 儲存</button>
                     <button id="clearGemini" class="danger">🗑️ 清除</button>
                 </div>
                 <div id="geminiStatus" style="font-size:0.8rem; margin-top:6px; font-weight:bold;"></div>
             </div>
-            <div class="message">💡 安全提示：金鑰僅存於瀏覽器 LocalStorage，直接對 Google 官方發送，絕不經過 any 第三方伺服器。</div>
+            <div class="message">💡 安全提示：金鑰僅存於瀏覽器 LocalStorage，請求會透過您的後端伺服器轉發，後端會自動啟用備援機制。</div>
         </div>
     </div>
 
@@ -190,7 +190,7 @@
     <div class="srt-mode-box">
         <div class="srt-mode">
             <label>
-                <input type="checkbox" id="srtModeCheckbox"> 🎞️ <strong>開啟 SRT 字幕模式</strong> (抗粘連 + 即時日誌同步輸出 + 強效自動重試)
+                <input type="checkbox" id="srtModeCheckbox"> 🎞️ <strong>開啟 SRT 字幕模式</strong> (後端智慧備援 + 自動重試)
             </label>
             
             <div id="srtOptions" style="display: inline-flex; align-items: center; gap: 8px; opacity: 0.5; pointer-events: none;">
@@ -202,26 +202,31 @@
                 </select>
             </div>
         </div>
-        <span class="srt-hint">🚀 安全防護：新增「即時同步輸出」，就算翻譯中途被 Google 掐斷，前面翻好的字幕也會安全保留在結果框內！</span>
+        <span class="srt-hint">🚀 後端會自動處理 Gemini 配額問題，當 Gemini 失敗時無縫切換至 Google 翻譯或 MyMemory 備援。</span>
     </div>
 
     <div class="translate-bar">
         <button id="translateBtn" class="btn-translate">✨ 開始翻譯</button>
     </div>
 
-    <div id="messageBox" class="message">✅ 瀏覽器直連模式已就緒 | 請先配置頂部金鑰設定。</div>
-    <footer>金鑰僅儲存於個人瀏覽器 LocalStorage，安全直連 Google 官方 API 端點。</footer>
+    <div id="messageBox" class="message">✅ 後端備援模式已就緒 | 請先配置頂部金鑰設定（可選）。</div>
+    <footer>金鑰僅儲存於個人瀏覽器 LocalStorage，請求經由您的 Railway 後端轉發，安全可靠。</footer>
     
     <div class="translate-card" style="margin-top: 16px;">
         <div class="box-header">
             <div style="flex:1"></div>
             <div><button id="copyBtn">📋 複製結果</button><button id="clearTarget" class="danger">清除</button></div>
         </div>
-        <textarea id="targetText" placeholder="翻譯結果會即時在此處一條一條同步顯示..." readonly></textarea>
+        <textarea id="targetText" placeholder="翻譯結果會在此顯示..." readonly></textarea>
     </div>
 </div>
 
 <script>
+    // =============================================================
+    //  🚀 重要：請將下方的 YOUR_RAILWAY_URL 換成您的 Railway 後端網址
+    // =============================================================
+    const BACKEND_URL = "YOUR_RAILWAY_URL";   // 例如 "https://your-app.up.railway.app"
+
     const SRC_LANG_LIST = [
         { code: "auto", name: "🤖 自動偵測語言" },
         { code: "zh-TW", name: "繁體中文" }, { code: "zh-CN", name: "簡體中文" },
@@ -274,7 +279,7 @@
         if (srtModeCheckbox.checked) {
             srtOptions.style.opacity = "1";
             srtOptions.style.pointerEvents = "auto";
-            translateBtn.innerText = "🎞️ 開始字幕批次翻譯";
+            translateBtn.innerText = "🎞️ 開始字幕批次翻譯 (後端備援)";
         } else {
             srtOptions.style.opacity = "0.5";
             srtOptions.style.pointerEvents = "none";
@@ -302,105 +307,51 @@
     
     document.getElementById('accordionToggle').onclick = () => accordion.classList.toggle('hide');
 
-    async function callGeminiAPI(promptText, apiKey) {
-        const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`;
-        
-        const response = await fetch(url, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                contents: [{ parts: [{ text: promptText }] }],
-                generationConfig: {
-                    temperature: 0.2, 
-                    maxOutputTokens: 8192
-                }
-            })
-        });
-
-        if (!response.ok) {
-            const errData = await response.json().catch(() => ({}));
-            throw new Error(errData?.error?.message || `Google API 錯誤，狀態碼: ${response.status}`);
-        }
-
-        const data = await response.json();
-        try {
-            return data.candidates[0].content.parts[0].text;
-        } catch (e) {
-            throw new Error("無法解析 Gemini 回傳的結構。");
-        }
-    }
-
-    function parseSRT(srtText) {
-        const lines = srtText.replace(/\r\n/g, '\n').split('\n');
-        const srtItems = [];
-        let currentItem = null;
-
-        for (let i = 0; i < lines.length; i++) {
-            const line = lines[i].trim();
-            if (!line) continue; 
-
-            if (line.includes('-->')) {
-                if (currentItem) {
-                    srtItems.push(currentItem);
-                }
-
-                let id = (srtItems.length + 1).toString(); 
-                if (i > 0 && /^\d+$/.test(lines[i - 1].trim())) {
-                    id = lines[i - 1].trim();
-                    if (currentItem && currentItem.contentLines.length > 0) {
-                        const lastLine = currentItem.contentLines[currentItem.contentLines.length - 1].trim();
-                        if (lastLine === id) {
-                            currentItem.contentLines.pop();
-                        }
-                    }
-                }
-
-                currentItem = {
-                    id: id,
-                    timeline: line,
-                    contentLines: []
-                };
-            } else {
-                if (currentItem) {
-                    currentItem.contentLines.push(line);
-                }
-            }
-        }
-
-        if (currentItem) {
-            srtItems.push(currentItem);
-        }
-
-        return srtItems.map(item => {
-            return {
-                id: item.id,
-                timeline: item.timeline,
-                content: item.contentLines.join('\n').trim()
-            };
-        });
-    }
-
+    // ============================================================
+    //  核心翻譯按鈕 – 改為呼叫後端 API
+    // ============================================================
     translateBtn.onclick = async () => {
         const text = sourceText.value.trim();
         if (!text) { setMsg('請輸入內容', 'error'); return; }
         
-        const apiKey = localStorage.getItem('gemini_key') || '';
-        if (!apiKey) { setMsg('❌ 錯誤：未偵測到 Gemini API Key！', 'error'); return; }
+        // 若未設定 BACKEND_URL 則提醒
+        if (BACKEND_URL === "YOUR_RAILWAY_URL") {
+            setMsg('❌ 請先將程式碼中的 BACKEND_URL 改為您的 Railway 後端網址！', 'error');
+            return;
+        }
 
-        const tgt = targetLang.value;
+        const apiKey = localStorage.getItem('gemini_key') || '';   // 可選，若後端設有環境變數則不強制
         const src = sourceLang.value;
+        const tgt = targetLang.value;
         const domain = domainSelect.value;
         const layout = srtLayoutSelect.value;
+        const isSrt = srtModeCheckbox.checked;
 
-        if (!srtModeCheckbox.checked) {
+        // 如果是普通翻譯（非 SRT）
+        if (!isSrt) {
             if (src === tgt && src !== 'auto') { targetText.value = text; setMsg('來源與目標語言相同'); return; }
-            targetText.value = '⏳ 正在直連 Google Gemini 翻譯中...';
-            setMsg('🔄 傳送至 Gemini API...');
-            const prompt = `你是一位精通多國語言的專業翻譯官。請將以下引號內的文字翻譯為【${tgt}】。\n領域專業背景：${domain} 相關。\n請直接輸出翻譯後的結果，不要包含任何多餘的解釋。\n\n「「「\n${text}\n「「「`;
+            targetText.value = '⏳ 正在透過後端進行翻譯 (Gemini 優先，備援 Google/MyMemory)...';
+            setMsg('🔄 傳送請求至後端...');
             try {
-                const result = await callGeminiAPI(prompt, apiKey);
-                targetText.value = result.trim();
-                setMsg('✅ 翻譯完成！');
+                const resp = await fetch(`${BACKEND_URL}/translate`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        text: text,
+                        source_lang: src,
+                        target_lang: tgt,
+                        domain: domain,
+                        gemini_key: apiKey || undefined   // 若無金鑰則不傳，後端會用環境變數
+                        // 若需要 DeepL 可加 deepl_key
+                    })
+                });
+                const data = await resp.json();
+                if (data.result) {
+                    targetText.value = data.result;
+                    setMsg(`✅ 翻譯完成！(引擎: ${data.engine || '備援'})`);
+                } else {
+                    throw new Error(data.error || '後端回傳空結果');
+                }
             } catch (err) {
                 targetText.value = `❌ 錯誤：\n${err.message}`;
                 setMsg(err.message, 'error');
@@ -408,93 +359,33 @@
             return;
         }
 
-        targetText.value = ''; // 🌟 清空，準備即時 Log 輸出
-        setMsg('⏳ 正在解析字幕結構並進行格式強固化處理...');
-        
-        const srtItems = parseSRT(text);
-        if (srtItems.length === 0) {
-            setMsg('❌ 錯誤：無法解析出合法的 SRT 字幕。', 'error');
-            return;
-        }
-
-        let layoutRequirement = "";
-        if (layout === "original_first") {
-            layoutRequirement = "輸出雙語字幕，格式為：每段字幕保留序號與時間軸，內容第一行為【原始文字】，第二行緊接著【翻譯後的譯文】。";
-        } else if (layout === "translated_first") {
-            layoutRequirement = "輸出雙語字幕，格式為：每段字幕保留序號與時間軸，內容第一行為【翻譯後的譯文】，第二行緊接著【原始文字】。";
-        } else {
-            layoutRequirement = "輸出單語字幕，格式為：每段字幕保留序號與時間軸，內容【只保留翻譯後的譯文】，完全丟棄原本的語言內容。";
-        }
-
-        const BATCH_SIZE = 20; // 🌟 保持安全小包，避免大請求被直接 Timeout
-        const MAX_RETRY = 3; 
-        let finalOutput = "";
-        let batchIndex = 1;
-
-        for (let i = 0; i < srtItems.length; i += BATCH_SIZE) {
-            const chunk = srtItems.slice(i, i + BATCH_SIZE);
-            const totalBatches = Math.ceil(srtItems.length / BATCH_SIZE);
-            
-            const chunkText = chunk.map(item => `${item.id}\n${item.timeline}\n${item.content}`).join('\n\n');
-
-            const srtPrompt = `你是一位專業的影片字幕組翻譯家。請幫我將以下完整的 SRT 字幕分段內容翻譯為【${tgt}】。
-⚠️ 必須嚴格遵守的黃金法則：
-1. 保持所有序號與時間軸完好無損，絕對不能修改、合併、漏掉 or 刪除任何一條時間軸！
-2. 翻譯時必須參考前後文（Context），確保語氣自然順暢、口語化且連貫。
-3. 行業領域與術語背景：基於【${domain}】領域進行名詞優化。
-4. 樣式與排版要求：${layoutRequirement}
-5. 🛑 絕不能包含廢話與任何 Markdown 語法標籤：絕對不要回覆任何前言、結語，也絕對禁止使用 \`\`\` 或 \`\`\`srt 包裹文字！請直接從序號開始輸出標準的純文字 SRT 格式！
-
-以下是待處理的 SRT 字幕片段：
-${chunkText}`;
-
-            let srtResult = "";
-            let success = false;
-            
-            for (let retryCount = 0; retryCount <= MAX_RETRY; retryCount++) {
-                try {
-                    if (retryCount > 0) {
-                        // 🌟 加重冷卻時間 (5秒、15秒、30秒)，給伺服器足夠的排隊釋放時間
-                        let cooldown = retryCount === 1 ? 5000 : retryCount === 2 ? 15000 : 30000;
-                        setMsg(`⚠️ Google 伺服器忙碌中... 正在冷卻並進行第 ${retryCount}/${MAX_RETRY} 次自動重試（等待 ${cooldown/1000} 秒）...`, 'warning');
-                        await new Promise(resolve => setTimeout(resolve, cooldown)); 
-                    } else {
-                        setMsg(`🔄 正在處理第 ${batchIndex} / ${totalBatches} 批字幕 (條數: ${i + 1} ~ ${Math.min(i + BATCH_SIZE, srtItems.length)})...`);
-                    }
-
-                    srtResult = await callGeminiAPI(srtPrompt, apiKey);
-                    success = true;
-                    break; 
-                } catch (err) {
-                    console.warn(`第 ${retryCount} 次重試失敗: ${err.message}`);
-                    if (retryCount === MAX_RETRY) {
-                        targetText.value = (finalOutput + `\n\n❌ 字幕處理在中途被中斷 (已自動重試 ${MAX_RETRY} 次均失敗)。\n您可以複製上方已翻譯好的部分，後續未翻譯的字幕可以分段重新貼上處理。\n最後錯誤訊息：${err.message}`).trim();
-                        setMsg(`❌ 字幕處理中斷: ${err.message}`, 'error');
-                        return;
-                    }
-                }
+        // ====== SRT 字幕模式 ======
+        targetText.value = '⏳ 正在傳送字幕至後端，後端會自動處理備援...';
+        setMsg('⏳ 正在解析字幕並請求後端...');
+        try {
+            const resp = await fetch(`${BACKEND_URL}/translate_srt`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    srt_content: text,
+                    source_lang: src,
+                    target_lang: tgt,
+                    domain: domain,
+                    layout_mode: layout,
+                    gemini_key: apiKey || undefined
+                })
+            });
+            const data = await resp.json();
+            if (data.srt_output) {
+                targetText.value = data.srt_output;
+                setMsg(`✅ 字幕翻譯完成！共 ${data.count} 條，引擎: ${data.engine || '後端'}`);
+            } else {
+                throw new Error(data.error || '後端未回傳字幕內容');
             }
-
-            if (success) {
-                let cleanOutput = srtResult.replace(/^```[a-zA-Z]*\n/g, '').replace(/\n```$/g, '').trim();
-                
-                // 🌟 核心改良：即時 append（附加）到 finalOutput，並立刻更新到畫面上
-                finalOutput += cleanOutput + "\n\n";
-                targetText.value = finalOutput.trim(); 
-                
-                // 讓滾動條自動滾動到最下方，方便即時檢視日誌
-                targetText.scrollTop = targetText.scrollHeight;
-                
-                batchIndex++;
-                
-                // 正常情況下每批之間安全冷卻 1.5 秒
-                await new Promise(resolve => setTimeout(resolve, 1500));
-            }
+        } catch (err) {
+            targetText.value = `❌ 字幕處理失敗：\n${err.message}`;
+            setMsg(err.message, 'error');
         }
-
-        // 全部完工後的最終校對提示
-        const finalMatchCount = (finalOutput.match(/-->/g) || []).length;
-        setMsg(`✅ 全部完成！共成功重組與對齊了 ${finalMatchCount} 條字幕軸，無任何斷頭漏字！`);
     };
 </script>
 </body>
