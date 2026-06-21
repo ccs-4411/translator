@@ -215,7 +215,8 @@ def translate_google(text, src, tgt):
     try:
         src_code = LANG_CONFIG.get(src, {}).get("google", "auto")
         tgt_code = LANG_CONFIG.get(tgt, {}).get("google", "en")
-        url = f"[https://translate.googleapis.com/translate_a/single?client=gtx&sl=](https://translate.googleapis.com/translate_a/single?client=gtx&sl=){src_code}&tl={tgt_code}&dt=t&q={requests.utils.quote(text)}"
+        # 修正：移除多餘的 Markdown 語法，使用純 URL
+        url = f"https://translate.googleapis.com/translate_a/single?client=gtx&sl={src_code}&tl={tgt_code}&dt=t&q={requests.utils.quote(text)}"
         resp = requests.get(url, timeout=15)
         if resp.status_code == 200:
             return "".join(part[0] for part in resp.json()[0] if part[0]) or text
@@ -231,7 +232,7 @@ def translate_deepl(text, src, tgt, api_key):
         params = {"text": text, "target_lang": tgt_code}
         if src_code and src_code != "auto": params["source_lang"] = src_code
         headers = {"Authorization": f"DeepL-Auth-Key {api_key}"}
-        resp = requests.post("[https://api-free.deepl.com/v2/translate](https://api-free.deepl.com/v2/translate)", data=params, headers=headers, timeout=15)
+        resp = requests.post("https://api-free.deepl.com/v2/translate", data=params, headers=headers, timeout=15)
         if resp.status_code == 200: return resp.json()["translations"][0]["text"]
     except Exception:
         pass
@@ -244,7 +245,8 @@ def translate_gemini(text, src, tgt, api_key, domain="general"):
         src_name = LANG_CONFIG.get(src, {}).get("name", src)
         tgt_name = LANG_CONFIG.get(tgt, {}).get("name", tgt)
         system_instruction = generate_dynamic_prompt(domain, src_name, tgt_name)
-        url = f"[https://generativelanguage.googleapis.com/v1beta/models/](https://generativelanguage.googleapis.com/v1beta/models/){DEFAULT_GEMINI_MODEL}:generateContent?key={api_key}"
+        # 修正：移除 Markdown 語法
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/{DEFAULT_GEMINI_MODEL}:generateContent?key={api_key}"
         payload = {
             "contents": [{"parts": [{"text": text}]}],
             "system_instruction": {"parts": [{"text": system_instruction}]},
@@ -270,7 +272,8 @@ def translate_gemini_batch(subtitles, src, tgt, api_key, domain="general"):
         batch_instruction = build_batch_instruction(domain, src_name, tgt_name)
         input_data = [{"id": str(sub.get("id")), "text": normalize_subtitle_text(sub.get("text", ""))} for sub in subtitles]
         
-        url = f"[https://generativelanguage.googleapis.com/v1beta/models/](https://generativelanguage.googleapis.com/v1beta/models/){DEFAULT_GEMINI_MODEL}:generateContent?key={api_key}"
+        # 修正：移除 Markdown 語法
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/{DEFAULT_GEMINI_MODEL}:generateContent?key={api_key}"
         payload = {
             "contents": [{"parts": [{"text": json.dumps(input_data, ensure_ascii=False)}]}],
             "system_instruction": {"parts": [{"text": batch_instruction}]},
