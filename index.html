@@ -131,6 +131,7 @@
             <span class="arrow">▼</span>
         </div>
         <div class="accordion-content">
+            <!-- Gemini 金鑰 -->
             <div style="margin-bottom: 20px;">
                 <label>✨ Google Gemini API Key (可選，若已在 Railway 環境變數設定則免填)</label>
                 <div class="api-group">
@@ -140,6 +141,18 @@
                 </div>
                 <div id="geminiStatus" style="font-size:0.8rem; margin-top:6px; font-weight:bold;"></div>
             </div>
+
+            <!-- DeepL 金鑰（新增） -->
+            <div style="margin-bottom: 20px; border-top: 1px solid #e5e7eb; padding-top: 16px;">
+                <label>🌐 DeepL API Key (可選，強烈建議填入以獲得最佳翻譯品質，特別是法文/德文/西班牙文)</label>
+                <div class="api-group">
+                    <div class="input-flex"><input type="password" id="deeplKey" placeholder="輸入 DeepL 免費版 API Key (非必要)"></div>
+                    <button id="saveDeepl" class="primary">💾 儲存</button>
+                    <button id="clearDeepl" class="danger">🗑️ 清除</button>
+                </div>
+                <div id="deeplStatus" style="font-size:0.8rem; margin-top:6px; font-weight:bold;"></div>
+            </div>
+
             <div class="message">💡 安全提示：金鑰僅存於瀏覽器 LocalStorage，請求會透過您的後端伺服器轉發，後端會自動啟用備援機制。</div>
         </div>
     </div>
@@ -202,14 +215,14 @@
                 </select>
             </div>
         </div>
-        <span class="srt-hint">🚀 後端會自動處理 Gemini 配額問題，當 Gemini 失敗時無縫切換至 Google 翻譯或 MyMemory 備援。</span>
+        <span class="srt-hint">🚀 後端會自動處理 Gemini 配額問題，當 Gemini 失敗時無縫切換至 DeepL (若提供金鑰) → Google → MyMemory。</span>
     </div>
 
     <div class="translate-bar">
         <button id="translateBtn" class="btn-translate">✨ 開始翻譯</button>
     </div>
 
-    <div id="messageBox" class="message">✅ 後端備援模式已就緒 | 請先配置頂部金鑰設定（可選）。</div>
+    <div id="messageBox" class="message">✅ 後端備援模式已就緒 | 請配置頂部金鑰設定（建議填入 DeepL 金鑰以獲得最佳品質）。</div>
     <footer>金鑰僅儲存於個人瀏覽器 LocalStorage，請求經由您的 Railway 後端轉發，安全可靠。</footer>
     
     <div class="translate-card" style="margin-top: 16px;">
@@ -246,15 +259,35 @@
     }
     populateSelects();
 
+    // ==== 金鑰管理 ====
     const geminiInput = document.getElementById('geminiKey');
     const geminiStatus = document.getElementById('geminiStatus');
-    
+    const deeplInput = document.getElementById('deeplKey');
+    const deeplStatus = document.getElementById('deeplStatus');
+
     function loadKeys() {
         const g = localStorage.getItem('gemini_key');
         if (g) { geminiInput.value = g; geminiStatus.innerText = '✅ 金鑰已載入'; }
+        const d = localStorage.getItem('deepl_key');
+        if (d) { deeplInput.value = d; deeplStatus.innerText = '✅ 金鑰已載入'; }
     }
-    document.getElementById('saveGemini').onclick = () => { let k = geminiInput.value.trim(); if(k){ localStorage.setItem('gemini_key', k); geminiStatus.innerText = '✅ 已儲存'; } };
-    document.getElementById('clearGemini').onclick = () => { localStorage.removeItem('gemini_key'); geminiInput.value = ''; geminiStatus.innerText = '🧹 已清除'; };
+
+    document.getElementById('saveGemini').onclick = () => { 
+        let k = geminiInput.value.trim(); 
+        if(k){ localStorage.setItem('gemini_key', k); geminiStatus.innerText = '✅ 已儲存'; } 
+    };
+    document.getElementById('clearGemini').onclick = () => { 
+        localStorage.removeItem('gemini_key'); geminiInput.value = ''; geminiStatus.innerText = '🧹 已清除'; 
+    };
+
+    document.getElementById('saveDeepl').onclick = () => { 
+        let k = deeplInput.value.trim(); 
+        if(k){ localStorage.setItem('deepl_key', k); deeplStatus.innerText = '✅ 已儲存'; } 
+    };
+    document.getElementById('clearDeepl').onclick = () => { 
+        localStorage.removeItem('deepl_key'); deeplInput.value = ''; deeplStatus.innerText = '🧹 已清除'; 
+    };
+
     loadKeys();
 
     const sourceText = document.getElementById('sourceText');
@@ -308,29 +341,29 @@
     document.getElementById('accordionToggle').onclick = () => accordion.classList.toggle('hide');
 
     // ============================================================
-    //  核心翻譯按鈕 – 改為呼叫後端 API
+    //  核心翻譯按鈕 – 改為呼叫後端 API (支援 DeepL 金鑰)
     // ============================================================
     translateBtn.onclick = async () => {
         const text = sourceText.value.trim();
         if (!text) { setMsg('請輸入內容', 'error'); return; }
         
-        // 若未設定 BACKEND_URL 則提醒
         if (BACKEND_URL === "YOUR_RAILWAY_URL") {
             setMsg('❌ 請先將程式碼中的 BACKEND_URL 改為您的 Railway 後端網址！', 'error');
             return;
         }
 
-        const apiKey = localStorage.getItem('gemini_key') || '';   // 可選，若後端設有環境變數則不強制
+        // 讀取儲存的金鑰
+        const geminiKey = localStorage.getItem('gemini_key') || '';
+        const deeplKey = localStorage.getItem('deepl_key') || '';
         const src = sourceLang.value;
         const tgt = targetLang.value;
         const domain = domainSelect.value;
         const layout = srtLayoutSelect.value;
         const isSrt = srtModeCheckbox.checked;
 
-        // 如果是普通翻譯（非 SRT）
         if (!isSrt) {
             if (src === tgt && src !== 'auto') { targetText.value = text; setMsg('來源與目標語言相同'); return; }
-            targetText.value = '⏳ 正在透過後端進行翻譯 (Gemini 優先，備援 Google/MyMemory)...';
+            targetText.value = '⏳ 正在透過後端進行翻譯 (Gemini 優先，備援 DeepL/Google/MyMemory)...';
             setMsg('🔄 傳送請求至後端...');
             try {
                 const resp = await fetch(`${BACKEND_URL}/translate`, {
@@ -341,8 +374,8 @@
                         source_lang: src,
                         target_lang: tgt,
                         domain: domain,
-                        gemini_key: apiKey || undefined   // 若無金鑰則不傳，後端會用環境變數
-                        // 若需要 DeepL 可加 deepl_key
+                        gemini_key: geminiKey || undefined,
+                        deepl_key: deeplKey || undefined
                     })
                 });
                 const data = await resp.json();
@@ -372,7 +405,8 @@
                     target_lang: tgt,
                     domain: domain,
                     layout_mode: layout,
-                    gemini_key: apiKey || undefined
+                    gemini_key: geminiKey || undefined,
+                    deepl_key: deeplKey || undefined
                 })
             });
             const data = await resp.json();
