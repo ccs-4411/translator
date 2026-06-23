@@ -5,11 +5,9 @@ import logging
 import json
 import traceback
 import time
-import unicodedata
 from flask import Flask, request, jsonify, send_from_directory
 from flask_cors import CORS
 
-# 嘗試導入 googletrans（若未安裝則略過）
 try:
     from googletrans import Translator
     HAS_GOOGLETRANS = True
@@ -25,9 +23,6 @@ ENV_GEMINI_KEY = os.environ.get("GEMINI_API_KEY", "")
 ENV_DEEPL_KEY = os.environ.get("DEEPL_API_KEY", "")
 DEFAULT_GEMINI_MODEL = "gemini-2.5-flash"
 
-# =========================================================
-# 語系對照表
-# =========================================================
 LANG_CONFIG = {
     "auto": {"google": "auto", "deepl": "auto", "mymemory": "auto", "name": "自動"},
     "zh-TW": {"google": "zh-TW", "deepl": "ZH-HANT", "mymemory": "zh-TW", "name": "繁體中文"},
@@ -40,9 +35,6 @@ LANG_CONFIG = {
     "es": {"google": "es", "deepl": "ES", "mymemory": "es", "name": "西班牙文"}
 }
 
-# =========================================================
-# 領域設定
-# =========================================================
 DOMAIN_CONFIG = {
     "general": {"role": "翻譯專家", "rules": ["保持自然流暢"]},
     "baseball": {"role": "棒球轉播翻譯", "rules": ["遵守術語對照"]},
@@ -58,9 +50,6 @@ def build_batch_instruction(domain, src_name, tgt_name):
     return (generate_dynamic_prompt(domain, src_name, tgt_name) +
             "\n請將輸入的JSON陣列中每個text翻譯，回傳相同結構的JSON陣列，只輸出JSON。")
 
-# =========================================================
-# 輔助函數（SRT 解析、文字清理、分塊等）
-# =========================================================
 def parse_srt(srt):
     srt = srt.replace('\r\n', '\n').replace('\r', '\n')
     pattern = r'(\d+)\n([0-9:, \t\-衰>]+)\n(.*?)(?=\n\s*\n|\n\d+\n[0-9:, \t\-衰>]+|\Z)'
@@ -101,32 +90,20 @@ def chunk_subtitles(subs, domain="general"):
         chunks.append(cur)
     return chunks
 
-# =========================================================
-# 增強版「未翻譯檢測」
-# =========================================================
 def looks_untranslated(src, trans, tgt_lang):
-    """
-    判斷翻譯結果是否仍為原文或僅部分翻譯。
-    針對目標為中文時，檢查中文字元比例。
-    """
     if not trans or trans.strip() == src.strip():
         return True
     if tgt_lang in ["zh-TW", "zh-CN"]:
         total = len(trans)
         if total == 0:
             return True
-        # 計算中文字元（CJK Unified Ideographs）數量
         cjk_count = sum(1 for c in trans if '\u4e00' <= c <= '\u9fff')
-        # 若中文字元佔比低於 30%，視為未翻譯（可能仍是原文或夾雜大量外文）
         if cjk_count / total < 0.3:
             return True
     return False
 
-# =========================================================
-# 翻譯引擎（三層備援）
-# =========================================================
+# ===== 翻譯引擎 =====
 
-# ----- 第一層：Gemini（含重試機制）-----
 def translate_gemini(text, src, tgt, api_key, domain="general", retry=1):
     try:
         if not api_key:
@@ -146,20 +123,17 @@ def translate_gemini(text, src, tgt, api_key, domain="general", retry=1):
                 if resp.status_code == 200:
                     return resp.json()["candidates"][0]["content"]["parts"][0]["text"].strip()
                 elif resp.status_code == 503 and attempt < retry:
-                    app.logger.warning(f"Gemini 503，等待 2 秒後重試 (嘗試 {attempt+1}/{retry})")
                     time.sleep(2)
                     continue
                 else:
-                    app.logger.warning(f"Gemini 狀態 {resp.status_code}")
                     break
-            except Exception as e:
-                app.logger.warning(f"Gemini 請求異常: {e}")
+            except Exception:
                 if attempt < retry:
                     time.sleep(1)
                     continue
                 break
-    except Exception as e:
-        app.logger.warning(f"Gemini 單句異常: {e}")
+    except Exception:
+        pass
     return ""
 
 def translate_gemini_batch(subs, src, tgt, api_key, domain="general", retry=1):
@@ -186,26 +160,21 @@ def translate_gemini_batch(subs, src, tgt, api_key, domain="general", retry=1):
                     parsed = json.loads(raw)
                     if isinstance(parsed, list):
                         return parsed
-                    else:
-                        return []
+                    return []
                 elif resp.status_code == 503 and attempt < retry:
-                    app.logger.warning(f"Gemini 批次 503，等待 2 秒後重試 (嘗試 {attempt+1}/{retry})")
                     time.sleep(2)
                     continue
                 else:
-                    app.logger.warning(f"Gemini 批次狀態 {resp.status_code}")
                     break
-            except Exception as e:
-                app.logger.warning(f"Gemini 批次請求異常: {e}")
+            except Exception:
                 if attempt < retry:
                     time.sleep(1)
                     continue
                 break
-    except Exception as e:
-        app.logger.warning(f"Gemini 批次異常: {e}")
+    except Exception:
+        pass
     return []
 
-# ----- 第二層：DeepL（優先）-----
 def translate_deepl(text, src, tgt, api_key):
     try:
         if not api_key:
@@ -219,57 +188,38 @@ def translate_deepl(text, src, tgt, api_key):
         resp = requests.post("https://api-free.deepl.com/v2/translate", data=params, headers=headers, timeout=15)
         if resp.status_code == 200:
             return resp.json()["translations"][0]["text"]
-    except Exception as e:
-        app.logger.warning(f"DeepL 異常: {e}")
+    except Exception:
+        pass
     return ""
 
-# ----- 第三層：Google 翻譯（requests + googletrans 雙模式）-----
 def translate_google(text, src, tgt):
     result = ""
-    # 模式一：requests 直連
     try:
         src_code = LANG_CONFIG.get(src, {}).get("google", "auto")
         tgt_code = LANG_CONFIG.get(tgt, {}).get("google", "en")
         url = "https://translate.googleapis.com/translate_a/single"
         params = {"client": "webapp", "sl": src_code, "tl": tgt_code, "dt": "t", "q": text}
-        headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
+        headers = {"User-Agent": "Mozilla/5.0"}
         resp = requests.get(url, params=params, headers=headers, timeout=15)
         if resp.status_code == 200:
             data = resp.json()
-            # 解析多種可能結構
-            if isinstance(data, list):
-                if len(data) > 0 and isinstance(data[0], list):
-                    parts = []
-                    for seg in data[0]:
-                        if isinstance(seg, list) and len(seg) > 0 and seg[0] is not None:
-                            parts.append(str(seg[0]))
-                        elif isinstance(seg, str):
-                            parts.append(seg)
-                    if parts:
-                        result = "".join(parts)
-                elif all(isinstance(item, str) for item in data):
-                    result = "".join(data)
-            elif isinstance(data, dict):
-                result = data.get("translatedText", "")
-            if result:
-                app.logger.info(f"Google (requests) 翻譯成功: {result[:30]}...")
-                return result
-    except Exception as e:
-        app.logger.warning(f"Google (requests) 異常: {e}")
+            if isinstance(data, list) and len(data) > 0 and isinstance(data[0], list):
+                parts = [str(seg[0]) for seg in data[0] if isinstance(seg, list) and len(seg) > 0 and seg[0] is not None]
+                if parts:
+                    return "".join(parts)
+    except Exception:
+        pass
 
-    # 模式二：googletrans 備援
-    if HAS_GOOGLETRANS and not result:
+    if HAS_GOOGLETRANS:
         try:
             translator = Translator()
             trans = translator.translate(text, src=src_code, dest=tgt_code)
             if trans and trans.text:
-                result = trans.text
-                app.logger.info(f"Google (googletrans) 翻譯成功: {result[:30]}...")
-        except Exception as e:
-            app.logger.warning(f"Google (googletrans) 異常: {e}")
+                return trans.text
+        except Exception:
+            pass
     return result
 
-# ----- 第四層：MyMemory（免費）-----
 def translate_mymemory(text, src, tgt):
     try:
         src_code = LANG_CONFIG.get(src, {}).get("mymemory", "auto")
@@ -280,58 +230,41 @@ def translate_mymemory(text, src, tgt):
         if resp.status_code == 200:
             data = resp.json()
             if data.get("responseStatus") == 200:
-                trans = data.get("responseData", {}).get("translatedText", "")
-                if trans:
-                    app.logger.info(f"MyMemory 翻譯成功: {trans[:30]}...")
-                    return trans
-    except Exception as e:
-        app.logger.warning(f"MyMemory 異常: {e}")
+                return data.get("responseData", {}).get("translatedText", "")
+    except Exception:
+        pass
     return ""
 
-# ----- 安全單句翻譯（依序嘗試所有引擎）-----
-def safe_single_translate(text, src, tgt, domain, gemini_key, deepl_key, allow_gemini=False):
+# 調整單句安全翻譯：回傳翻譯結果與實際使用的引擎名稱
+def safe_single_translate_with_engine(text, src, tgt, domain, gemini_key, deepl_key, allow_gemini=True):
     text = normalize_text(text)
     if not text:
-        return ""
-    # 1. Gemini（若允許）
+        return "", "None"
+    
     if allow_gemini and gemini_key:
         r = translate_gemini(text, src, tgt, gemini_key, domain, retry=1)
         if r and not looks_untranslated(text, r, tgt):
-            return normalize_text(r)
-    # 2. DeepL（優先於 Google，若提供金鑰）
+            return normalize_text(r), "Gemini"
+            
     if deepl_key:
         r = translate_deepl(text, src, tgt, deepl_key)
         if r and not looks_untranslated(text, r, tgt):
-            return normalize_text(r)
-    # 3. Google
+            return normalize_text(r), "DeepL 備援"
+            
     r = translate_google(text, src, tgt)
     if r and not looks_untranslated(text, r, tgt):
-        return normalize_text(r)
-    # 4. MyMemory
+        return normalize_text(r), "Google 備援"
+        
     r = translate_mymemory(text, src, tgt)
     if r and not looks_untranslated(text, r, tgt):
-        return normalize_text(r)
-    # 全部失敗或未翻譯，回傳原文
-    app.logger.warning(f"所有引擎失敗或未翻譯，保留原文: {text[:50]}...")
-    return text
+        return normalize_text(r), "MyMemory 備援"
+        
+    return text, "無效備援(保留原文)"
 
-# =========================================================
-# Flask 路由
-# =========================================================
+# ===== Flask 路由 =====
 @app.route('/')
 def index():
     return send_from_directory('.', 'index.html')
-
-@app.route('/test_translate', methods=['GET'])
-def test_translate():
-    test = "Hello, how are you?"
-    google = translate_google(test, "en", "zh-TW")
-    mymemory = translate_mymemory(test, "en", "zh-TW")
-    return jsonify({
-        "google": google,
-        "mymemory": mymemory,
-        "has_googletrans": HAS_GOOGLETRANS
-    })
 
 @app.route('/translate', methods=['POST'])
 def translate_text():
@@ -343,16 +276,13 @@ def translate_text():
         domain = data.get("domain", "general")
         gemini_key = data.get("gemini_key") or ENV_GEMINI_KEY
         deepl_key = data.get("deepl_key") or ENV_DEEPL_KEY
+        
         if not text:
-            return jsonify({"result": ""}), 200
-        # 嘗試 Gemini
-        if gemini_key:
-            r = translate_gemini(text, src, tgt, gemini_key, domain, retry=1)
-            if r and not looks_untranslated(text, r, tgt):
-                return jsonify({"result": r, "engine": "Gemini"})
-        # 備援
-        r = safe_single_translate(text, src, tgt, domain, gemini_key, deepl_key, allow_gemini=False)
-        return jsonify({"result": r, "engine": "備援"})
+            return jsonify({"result": "", "engine": "None"}), 200
+            
+        # 直接使用全功能安全翻譯（允許 Gemini）
+        r, engine = safe_single_translate_with_engine(text, src, tgt, domain, gemini_key, deepl_key, allow_gemini=True)
+        return jsonify({"result": r, "engine": engine})
     except Exception as e:
         app.logger.error(traceback.format_exc())
         return jsonify({"result": "", "engine": "Error"}), 200
@@ -368,6 +298,7 @@ def translate_srt():
         layout = data.get("layout_mode", "original_first")
         gemini_key = data.get("gemini_key") or ENV_GEMINI_KEY
         deepl_key = data.get("deepl_key") or ENV_DEEPL_KEY
+        
         if not srt_content:
             return jsonify({"srt_output": "", "error": "無內容"}), 200
         subs = parse_srt(srt_content)
@@ -375,11 +306,11 @@ def translate_srt():
             return jsonify({"srt_output": srt_content, "error": "解析失敗"}), 200
 
         trans_map = {}
-        fallback = False
+        fallback_engines = set()
         gemini_ok = bool(gemini_key)
         chunks = chunk_subtitles(subs, domain)
 
-        for idx, chunk in enumerate(chunks, 1):
+        for chunk in chunks:
             batch_done = False
             if gemini_ok:
                 batch_res = translate_gemini_batch(chunk, src, tgt, gemini_key, domain, retry=1)
@@ -397,27 +328,24 @@ def translate_srt():
                                         trans_text = normalize_text(item.get("text", ""))
                                         break
                                 if looks_untranslated(src_text, trans_text, tgt):
-                                    trans_text = safe_single_translate(src_text, src, tgt, domain, gemini_key, deepl_key, allow_gemini=False)
+                                    trans_text, eng = safe_single_translate_with_engine(src_text, src, tgt, domain, gemini_key, deepl_key, allow_gemini=True)
+                                    fallback_engines.add(eng)
+                                else:
+                                    fallback_engines.add("Gemini")
                                 trans_map[sid] = trans_text
                             batch_done = True
-                        else:
-                            gemini_ok = False
-                            fallback = True
                     except Exception:
-                        gemini_ok = False
-                        fallback = True
-                else:
-                    gemini_ok = False
-                    fallback = True
+                        pass
 
             if not batch_done:
-                fallback = True
                 for sub in chunk:
                     sid = str(sub["id"])
                     src_text = normalize_text(sub["text"])
-                    trans_map[sid] = safe_single_translate(src_text, src, tgt, domain, gemini_key, deepl_key, allow_gemini=False)
+                    # 當 Batch 失敗，單句允許使用 Gemini 補救
+                    trans_text, eng = safe_single_translate_with_engine(src_text, src, tgt, domain, gemini_key, deepl_key, allow_gemini=True)
+                    fallback_engines.add(eng)
+                    trans_map[sid] = trans_text
 
-        # 組裝 SRT
         out = []
         for sub in subs:
             sid, ts = str(sub["id"]), sub["time"]
@@ -425,33 +353,27 @@ def translate_srt():
             trans = normalize_text(trans_map.get(sid, ""))
             block = [sid, ts]
             if layout == "original_first":
-                block.append(orig)
-                if trans:
-                    block.append(trans)
+                block.extend([orig, trans] if trans else [orig])
             elif layout == "translated_first":
-                if trans:
-                    block.append(trans)
-                block.append(orig)
+                block.extend([trans, orig] if trans else [orig])
             elif layout == "translated_only":
                 block.append(trans if trans else orig)
             else:
-                block.append(orig)
-                if trans:
-                    block.append(trans)
+                block.extend([orig, trans] if trans else [orig])
             out.append("\n".join(block))
+            
         final_srt = "\n\n".join(out).strip() + "\n"
-
-        engine_label = "Gemini" if not fallback else "備援 (DeepL/Google/MyMemory)"
+        engine_label = " + ".join(filter(None, fallback_engines)) or "未知引擎"
+        
         return jsonify({
             "srt_output": final_srt,
             "count": len(subs),
             "translated_count": len(trans_map),
-            "engine": engine_label,
-            "logs": ["備援已啟動" if fallback else "全部 Gemini"]
+            "engine": engine_label
         }), 200
     except Exception as e:
         app.logger.error(traceback.format_exc())
-        return jsonify({"srt_output": srt_content, "engine": "緊急救援"}), 200
+        return jsonify({"srt_output": srt_content, "engine": "緊急救援模式"}), 200
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=int(os.environ.get('PORT', 5000)))
