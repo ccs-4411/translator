@@ -131,7 +131,6 @@
             <span class="arrow">▼</span>
         </div>
         <div class="accordion-content">
-            <!-- Gemini 金鑰 -->
             <div style="margin-bottom: 20px;">
                 <label>✨ Google Gemini API Key (可選，若已在 Railway 環境變數設定則免填)</label>
                 <div class="api-group">
@@ -142,9 +141,8 @@
                 <div id="geminiStatus" style="font-size:0.8rem; margin-top:6px; font-weight:bold;"></div>
             </div>
 
-            <!-- DeepL 金鑰（新增） -->
             <div style="margin-bottom: 20px; border-top: 1px solid #e5e7eb; padding-top: 16px;">
-                <label>🌐 DeepL API Key (可選，強烈建議填入以獲得最佳翻譯品質，特別是法文/德文/西班牙文)</label>
+                <label>🌐 DeepL API Key (可選，強烈建議填入以獲得最佳翻譯品質)</label>
                 <div class="api-group">
                     <div class="input-flex"><input type="password" id="deeplKey" placeholder="輸入 DeepL 免費版 API Key (非必要)"></div>
                     <button id="saveDeepl" class="primary">💾 儲存</button>
@@ -167,18 +165,9 @@
                 <label>🏷️ 行業領域（引導 AI 術語優化）</label>
                 <select id="domainSelect">
                     <option value="general">一般翻譯</option>
-                    <option value="travel">旅遊</option>
                     <option value="baseball">棒球</option>
                     <option value="basketball">籃球</option>
                     <option value="gaming">遊戲</option>
-                    <option value="news">新聞</option>
-                    <option value="entertainment">娛樂</option>
-                    <option value="mechanical">機械</option>
-                    <option value="semiconductor">半導體</option>
-                    <option value="medical">醫療</option>
-                    <option value="legal">法律</option>
-                    <option value="it">資訊科技</option>
-                    <option value="finance">金融</option>
                 </select>
             </div>
             <div class="lang-item">
@@ -222,8 +211,7 @@
         <button id="translateBtn" class="btn-translate">✨ 開始翻譯</button>
     </div>
 
-    <div id="messageBox" class="message">✅ 後端備援模式已就緒 | 請配置頂部金鑰設定（建議填入 DeepL 金鑰以獲得最佳品質）。</div>
-    <footer>金鑰僅儲存於個人瀏覽器 LocalStorage，請求經由您的 Railway 後端轉發，安全可靠。</footer>
+    <div id="messageBox" class="message">✅ 後端備援模式已就緒 | 請配置頂部金鑰設定（建議填入 Gemini 金鑰與 DeepL 金鑰）。</div>
     
     <div class="translate-card" style="margin-top: 16px;">
         <div class="box-header">
@@ -232,11 +220,12 @@
         </div>
         <textarea id="targetText" placeholder="翻譯結果會在此顯示..." readonly></textarea>
     </div>
+    <footer>金鑰僅儲存於個人瀏覽器 LocalStorage，請求經由您的 Railway 後端轉發，安全可靠。</footer>
 </div>
 
 <script>
     // =============================================================
-    //  🚀 重要：請將下方的 YOUR_RAILWAY_URL 換成您的 Railway 後端網址
+    //  🚀 重要：後端 Railway 網址配置
     // =============================================================
     const BACKEND_URL = "https://translator-production-a66b.up.railway.app";
 
@@ -248,7 +237,14 @@
     ];
     const TGT_LANG_LIST = SRC_LANG_LIST.slice(1);
 
+    // 手風琴收折
     const accordion = document.getElementById('keyAccordion');
+    const toggleBtn = document.getElementById('accordionToggle');
+    toggleBtn.onclick = () => {
+        accordion.classList.toggle('hide');
+    };
+
+    // 初始化語言選單
     function populateSelects() {
         const source = document.getElementById('sourceLang');
         const target = document.getElementById('targetLang');
@@ -259,7 +255,7 @@
     }
     populateSelects();
 
-    // ==== 金鑰管理 ====
+    // ==== 金鑰儲存管理 ====
     const geminiInput = document.getElementById('geminiKey');
     const geminiStatus = document.getElementById('geminiStatus');
     const deeplInput = document.getElementById('deeplKey');
@@ -271,154 +267,119 @@
         const d = localStorage.getItem('deepl_key');
         if (d) { deeplInput.value = d; deeplStatus.innerText = '✅ 金鑰已載入'; }
     }
+    loadKeys();
 
     document.getElementById('saveGemini').onclick = () => { 
         let k = geminiInput.value.trim(); 
-        if(k){ localStorage.setItem('gemini_key', k); geminiStatus.innerText = '✅ 已儲存'; } 
+        if(k){ localStorage.setItem('gemini_key', k); geminiStatus.innerText = '✅ 已儲存'; alert('Gemini 金鑰儲存成功！'); } 
     };
     document.getElementById('clearGemini').onclick = () => { 
-        localStorage.removeItem('gemini_key'); geminiInput.value = ''; geminiStatus.innerText = '🧹 已清除'; 
+        localStorage.removeItem('gemini_key'); geminiInput.value = ''; geminiStatus.innerText = '🗑️ 已清除'; 
     };
 
     document.getElementById('saveDeepl').onclick = () => { 
         let k = deeplInput.value.trim(); 
-        if(k){ localStorage.setItem('deepl_key', k); deeplStatus.innerText = '✅ 已儲存'; } 
+        if(k){ localStorage.setItem('deepl_key', k); deeplStatus.innerText = '✅ 已儲存'; alert('DeepL 金鑰儲存成功！'); } 
     };
     document.getElementById('clearDeepl').onclick = () => { 
-        localStorage.removeItem('deepl_key'); deeplInput.value = ''; deeplStatus.innerText = '🧹 已清除'; 
+        localStorage.removeItem('deepl_key'); deeplInput.value = ''; deeplStatus.innerText = '🗑️ 已清除'; 
     };
 
-    loadKeys();
-
-    const sourceText = document.getElementById('sourceText');
-    const targetText = document.getElementById('targetText');
-    const sourceLang = document.getElementById('sourceLang');
-    const targetLang = document.getElementById('targetLang');
-    const msgBox = document.getElementById('messageBox');
-    const domainSelect = document.getElementById('domainSelect');
-    const srtModeCheckbox = document.getElementById('srtModeCheckbox');
+    // ==== SRT 模式切換介面優化 ====
+    const srtCheckbox = document.getElementById('srtModeCheckbox');
     const srtOptions = document.getElementById('srtOptions');
-    const srtLayoutSelect = document.getElementById('srtLayoutSelect');
-    const translateBtn = document.getElementById('translateBtn');
-
-    function setMsg(msg, type='info') {
-        msgBox.innerHTML = msg;
-        msgBox.classList.remove('error', 'warning');
-        if (type === 'error') msgBox.classList.add('error');
-        else if (type === 'warning') msgBox.classList.add('warning');
-    }
-
-    srtModeCheckbox.onchange = () => {
-        if (srtModeCheckbox.checked) {
+    srtCheckbox.onchange = () => {
+        if(srtCheckbox.checked) {
             srtOptions.style.opacity = "1";
             srtOptions.style.pointerEvents = "auto";
-            translateBtn.innerText = "🎞️ 開始字幕批次翻譯 (後端備援)";
         } else {
             srtOptions.style.opacity = "0.5";
             srtOptions.style.pointerEvents = "none";
-            translateBtn.innerText = "✨ 開始翻譯";
         }
     };
 
-    document.getElementById('pasteBtn').onclick = async () => { try { const t = await navigator.clipboard.readText(); sourceText.value = t; setMsg('已貼上'); } catch(e){ setMsg('無法讀取剪貼簿', 'error'); } };
-    document.getElementById('clearSource').onclick = () => { sourceText.value = ''; setMsg('原文已清除'); };
-    document.getElementById('copyBtn').onclick = async () => { if(targetText.value) { await navigator.clipboard.writeText(targetText.value); setMsg('📋 翻譯結果已成功複製到剪貼簿！'); } };
-    document.getElementById('clearTarget').onclick = () => { targetText.value = ''; setMsg('結果已清除'); };
-    
-    const fileBtn = document.getElementById('fileBtn');
-    const fileInput = document.getElementById('fileInput');
-    fileBtn.onclick = () => fileInput.click();
-    fileInput.onchange = (event) => {
-        const file = event.target.files[0];
+    // ==== 常用工具集 ====
+    document.getElementById('pasteBtn').onclick = async () => {
+        try { document.getElementById('sourceText').value = await navigator.clipboard.readText(); } catch(e) { alert("無法存取剪貼簿，請手動貼上。"); }
+    };
+    document.getElementById('clearSource').onclick = () => { document.getElementById('sourceText').value = ''; };
+    document.getElementById('clearTarget').onclick = () => { document.getElementById('targetText').value = ''; };
+    document.getElementById('copyBtn').onclick = () => {
+        const t = document.getElementById('targetText');
+        if(!t.value) return;
+        t.select(); document.execCommand('copy');
+        alert('📋 複製成功！');
+    };
+    document.getElementById('fileBtn').onclick = () => { document.getElementById('fileInput').click(); };
+    document.getElementById('fileInput').onchange = (e) => {
+        const file = e.target.files[0];
         if (!file) return;
-        if (file.size > 5 * 1024 * 1024) { setMsg('檔案過大，請選擇小於 5MB 的文字檔', 'error'); fileInput.value = ''; return; }
-        if (file.name.toLowerCase().endsWith('.srt')) { srtModeCheckbox.checked = true; srtModeCheckbox.onchange(); }
+        if (file.name.endsWith('.srt')) { srtCheckbox.checked = true; srtCheckbox.onchange(); }
         const reader = new FileReader();
-        reader.onload = (e) => { sourceText.value = e.target.result; setMsg(`✅ 已開啟檔案：${file.name}`); };
-        reader.readAsText(file, 'UTF-8');
+        reader.onload = (el) => { document.getElementById('sourceText').value = el.target.result; };
+        reader.readAsText(file);
     };
-    
-    document.getElementById('accordionToggle').onclick = () => accordion.classList.toggle('hide');
 
-    // ============================================================
-    //  核心翻譯按鈕 – 改為呼叫後端 API (支援 DeepL 金鑰)
-    // ============================================================
-    translateBtn.onclick = async () => {
-        const text = sourceText.value.trim();
-        if (!text) { setMsg('請輸入內容', 'error'); return; }
+    // ==== 核心發送：點擊翻譯邏輯 ====
+    document.getElementById('translateBtn').onclick = async () => {
+        const text = document.getElementById('sourceText').value.trim();
+        const msgBox = document.getElementById('messageBox');
+        const targetField = document.getElementById('targetText');
         
-        if (BACKEND_URL === "YOUR_RAILWAY_URL") {
-            setMsg('❌ 請先將程式碼中的 BACKEND_URL 改為您的 Railway 後端網址！', 'error');
-            return;
-        }
+        if (!text) { alert("請輸入翻譯內容！"); return; }
+        
+        msgBox.className = "message warning";
+        msgBox.innerText = "⏳ 正在處理中，請稍候...";
+        targetField.value = "正在全力翻譯中...";
 
-        // 讀取儲存的金鑰
+        // 核心修正：確實從 LocalStorage 提取最新金鑰傳給後端
         const geminiKey = localStorage.getItem('gemini_key') || '';
         const deeplKey = localStorage.getItem('deepl_key') || '';
-        const src = sourceLang.value;
-        const tgt = targetLang.value;
-        const domain = domainSelect.value;
-        const layout = srtLayoutSelect.value;
-        const isSrt = srtModeCheckbox.checked;
 
-        if (!isSrt) {
-            if (src === tgt && src !== 'auto') { targetText.value = text; setMsg('來源與目標語言相同'); return; }
-            targetText.value = '⏳ 正在透過後端進行翻譯 (Gemini 優先，備援 DeepL/Google/MyMemory)...';
-            setMsg('🔄 傳送請求至後端...');
-            try {
-                const resp = await fetch(`${BACKEND_URL}/translate`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        text: text,
-                        source_lang: src,
-                        target_lang: tgt,
-                        domain: domain,
-                        gemini_key: geminiKey || undefined,
-                        deepl_key: deeplKey || undefined
-                    })
-                });
-                const data = await resp.json();
-                if (data.result) {
-                    targetText.value = data.result;
-                    setMsg(`✅ 翻譯完成！(引擎: ${data.engine || '備援'})`);
-                } else {
-                    throw new Error(data.error || '後端回傳空結果');
-                }
-            } catch (err) {
-                targetText.value = `❌ 錯誤：\n${err.message}`;
-                setMsg(err.message, 'error');
-            }
-            return;
-        }
+        const isSrt = srtCheckbox.checked;
+        const endpoint = isSrt ? `${BACKEND_URL}/translate_srt` : `${BACKEND_URL}/translate`;
+        
+        const payload = isSrt ? {
+            srt_content: text,
+            source_lang: document.getElementById('sourceLang').value,
+            target_lang: document.getElementById('targetLang').value,
+            domain: document.getElementById('domainSelect').value,
+            layout_mode: document.getElementById('srtLayoutSelect').value,
+            gemini_key: geminiKey,
+            deepl_key: deeplKey
+        } : {
+            text: text,
+            source_lang: document.getElementById('sourceLang').value,
+            target_lang: document.getElementById('targetLang').value,
+            domain: document.getElementById('domainSelect').value,
+            gemini_key: geminiKey,
+            deepl_key: deeplKey
+        };
 
-        // ====== SRT 字幕模式 ======
-        targetText.value = '⏳ 正在傳送字幕至後端，後端會自動處理備援...';
-        setMsg('⏳ 正在解析字幕並請求後端...');
         try {
-            const resp = await fetch(`${BACKEND_URL}/translate_srt`, {
+            const response = await fetch(endpoint, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    srt_content: text,
-                    source_lang: src,
-                    target_lang: tgt,
-                    domain: domain,
-                    layout_mode: layout,
-                    gemini_key: geminiKey || undefined,
-                    deepl_key: deeplKey || undefined
-                })
+                body: JSON.stringify(payload)
             });
-            const data = await resp.json();
-            if (data.srt_output) {
-                targetText.value = data.srt_output;
-                setMsg(`✅ 字幕翻譯完成！共 ${data.count} 條，引擎: ${data.engine || '後端'}`);
+            
+            if (!response.ok) throw new Error(`HTTP 錯誤! 狀態碼: ${response.status}`);
+            const resData = await response.json();
+
+            if (isSrt) {
+                targetField.value = resData.srt_output || "";
+                msgBox.className = "message";
+                msgBox.innerText = `✅ 字幕處理完畢！共處理 ${resData.count} 句。使用引擎：${resData.engine}`;
             } else {
-                throw new Error(data.error || '後端未回傳字幕內容');
+                targetField.value = resData.result || "";
+                msgBox.className = "message";
+                msgBox.innerText = `✅ 文章翻譯成功！使用引擎：${resData.engine}`;
             }
-        } catch (err) {
-            targetText.value = `❌ 字幕處理失敗：\n${err.message}`;
-            setMsg(err.message, 'error');
+        } catch (error) {
+            console.error(error);
+            msgBox.className = "message error";
+            msgBox.innerText = `❌ 請求失敗，請檢視 Railway 狀態。錯誤訊息: ${error.message}`;
+            targetField.value = "翻譯失敗，請檢視上方提示。";
         }
     };
 </script>
